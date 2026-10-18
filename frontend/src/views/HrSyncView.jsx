@@ -12,6 +12,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function HrSyncView({ onDataSynced }) {
   const [hrStatus, setHrStatus] = useState(null);
@@ -242,49 +243,61 @@ export default function HrSyncView({ onDataSynced }) {
           Two-Way Integration Audit History
         </h3>
 
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Sync Type</th>
-                <th>Status</th>
-                <th>Records Processed</th>
-                <th>Details & Message</th>
-                <th>Timestamp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-                    No sync events recorded yet. Click one of the buttons above to test integration.
-                  </td>
-                </tr>
-              ) : (
-                history.map(h => (
-                  <tr key={h.id}>
-                    <td>
-                      <span className={`badge ${h.sync_type === 'IMPORT_EMPLOYEES' ? 'badge-inside' : 'badge-present'}`}>
-                        {h.sync_type === 'IMPORT_EMPLOYEES' ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
-                        {h.sync_type}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${h.status === 'Success' ? 'badge-present' : 'badge-absent'}`}>
-                        {h.status}
-                      </span>
-                    </td>
-                    <td>
-                      <strong>{h.records_affected}</strong> records affected
-                    </td>
-                    <td>{h.message}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{h.synced_at}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          data={history}
+          loading={loading}
+          rowKey="id"
+          defaultSortKey="synced_at"
+          defaultSortDir="desc"
+          searchPlaceholder="Filter sync events by type, status, notes..."
+          exportFileName="HR_Sync_Audit_History"
+          emptyMessage="No sync events recorded yet. Click one of the buttons above to test integration."
+          columns={[
+            {
+              key: 'sync_type',
+              label: 'Sync Type',
+              sortable: true,
+              render: (h) => (
+                <span className={`badge ${h.sync_type === 'IMPORT_EMPLOYEES' ? 'badge-inside' : 'badge-present'}`}>
+                  {h.sync_type === 'IMPORT_EMPLOYEES' ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
+                  {h.sync_type}
+                </span>
+              )
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              sortable: true,
+              render: (h) => (
+                <span className={`badge ${h.status === 'Success' ? 'badge-present' : 'badge-absent'}`}>
+                  {h.status}
+                </span>
+              )
+            },
+            {
+              key: 'records_affected',
+              label: 'Records Processed',
+              sortable: true,
+              render: (h) => (
+                <span><strong>{h.records_affected}</strong> records affected</span>
+              )
+            },
+            {
+              key: 'message',
+              label: 'Details & Message',
+              sortable: true,
+              render: (h) => h.message || '--'
+            },
+            {
+              key: 'synced_at',
+              label: 'Timestamp',
+              sortable: true,
+              render: (h) => (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{h.synced_at}</span>
+              )
+            }
+          ]}
+        />
       </div>
     </div>
   );

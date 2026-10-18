@@ -16,6 +16,7 @@ import {
   RefreshCw 
 } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function CamerasView({ onCamerasChanged }) {
   const [cameras, setCameras] = useState([]);
@@ -175,83 +176,120 @@ export default function CamerasView({ onCamerasChanged }) {
           Configured CCTV Cameras
         </h3>
 
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Camera Name</th>
-                <th>IP Address</th>
-                <th>Assigned Role</th>
-                <th>Gate / Door Location</th>
-                <th>RTSP Stream URL (Port 554)</th>
-                <th>Status</th>
-                <th>Hardware Ping</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cameras.map(cam => {
+        <DataTable
+          data={cameras}
+          loading={loading}
+          rowKey="id"
+          defaultSortKey="camera_name"
+          searchPlaceholder="Filter cameras by name, IP, gate, role..."
+          exportFileName="CCTV_Cameras_List"
+          emptyMessage="No CCTV cameras configured yet."
+          columns={[
+            {
+              key: 'camera_name',
+              label: 'Camera Name',
+              sortable: true,
+              render: (cam) => (
+                <div>
+                  <div style={{ fontWeight: 700 }}>{cam.camera_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Camera ID: #{cam.id}</div>
+                </div>
+              )
+            },
+            {
+              key: 'ip_address',
+              label: 'IP Address',
+              sortable: true,
+              render: (cam) => (
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                  {cam.ip_address}
+                </span>
+              )
+            },
+            {
+              key: 'camera_role',
+              label: 'Assigned Role',
+              sortable: true,
+              render: (cam) => (
+                <span className={`badge ${cam.camera_role === 'IN' ? 'badge-in' : 'badge-out'}`}>
+                  {cam.camera_role === 'IN' ? <LogIn size={12} /> : <LogOut size={12} />}
+                  {cam.camera_role} (Direction)
+                </span>
+              )
+            },
+            {
+              key: 'gate_name',
+              label: 'Gate / Location',
+              sortable: true,
+              render: (cam) => (
+                <div>
+                  <div style={{ fontWeight: 600 }}>{cam.gate_name}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{cam.door_location}</div>
+                </div>
+              )
+            },
+            {
+              key: 'rtsp_url',
+              label: 'RTSP Stream URL (Port 554)',
+              sortable: true,
+              render: (cam) => (
+                <div style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cam.rtsp_url}>
+                  {cam.rtsp_url}
+                </div>
+              )
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              sortable: true,
+              render: (cam) => {
                 const isOnline = cam.status === 'Online';
+                return (
+                  <span className={`badge ${isOnline ? 'badge-present' : 'badge-absent'}`}>
+                    {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+                    {cam.status}
+                  </span>
+                );
+              }
+            },
+            {
+              key: 'hardware_ping',
+              label: 'Hardware Ping',
+              sortable: false,
+              align: 'center',
+              render: (cam) => {
                 const ping = pingStatus[cam.id];
                 return (
-                  <tr key={cam.id}>
-                    <td>
-                      <div style={{ fontWeight: 700 }}>{cam.camera_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Camera ID: #{cam.id}</div>
-                    </td>
-                    <td>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                        {cam.ip_address}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${cam.camera_role === 'IN' ? 'badge-in' : 'badge-out'}`}>
-                        {cam.camera_role === 'IN' ? <LogIn size={12} /> : <LogOut size={12} />}
-                        {cam.camera_role} (Direction)
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{cam.gate_name}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{cam.door_location}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cam.rtsp_url}>
-                        {cam.rtsp_url}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${isOnline ? 'badge-present' : 'badge-absent'}`}>
-                        {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-                        {cam.status}
-                      </span>
-                    </td>
-                    <td>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
-                        onClick={() => handleTestPing(cam)}
-                        disabled={ping === 'testing'}
-                      >
-                        <RefreshCw size={12} className={ping === 'testing' ? 'spin' : ''} />
-                        {ping === 'testing' ? 'Testing...' : 'Ping Port 554'}
-                      </button>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => openEditCamera(cam)}>
-                          <Edit2 size={13} />
-                        </button>
-                        <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: '#ef4444' }} onClick={() => handleDeleteCamera(cam.id)}>
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <button 
+                    className="btn btn-secondary" 
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
+                    onClick={() => handleTestPing(cam)}
+                    disabled={ping === 'testing'}
+                  >
+                    <RefreshCw size={12} className={ping === 'testing' ? 'spin' : ''} />
+                    {ping === 'testing' ? 'Testing...' : 'Ping Port 554'}
+                  </button>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
+              }
+            },
+            {
+              key: 'actions',
+              label: 'Actions',
+              sortable: false,
+              align: 'center',
+              render: (cam) => (
+                <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                  <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => openEditCamera(cam)} title="Edit Camera">
+                    <Edit2 size={13} />
+                  </button>
+                  <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: '#ef4444' }} onClick={() => handleDeleteCamera(cam.id)} title="Delete Camera">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )
+            }
+          ]}
+        />
       </div>
 
       {/* Paired Doors / Gates */}

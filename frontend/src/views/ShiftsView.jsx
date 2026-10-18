@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { CalendarClock, Plus, Edit2, Trash2, X, Clock, Check } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function ShiftsView({ onShiftsChanged }) {
   const [shifts, setShifts] = useState([]);
@@ -123,61 +124,99 @@ export default function ShiftsView({ onShiftsChanged }) {
         </div>
       </div>
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Shift Name & Code</th>
-              <th>Type</th>
-              <th>Start Time</th>
-              <th>End Time</th>
-              <th>Duration</th>
-              <th>Late Grace</th>
-              <th>Half Day Min</th>
-              <th>Full Day Min</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan="9" style={{ textAlign: 'center', padding: '3rem' }}>Loading shifts...</td></tr>
-            ) : shifts.map(s => (
-              <tr key={s.id}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: s.color_code || '#2563eb' }}></span>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>{s.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{s.code}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span className="badge badge-inside">{s.shift_type}</span>
-                </td>
-                <td><strong style={{ fontFamily: 'var(--font-mono)' }}>{s.start_time?.slice(0, 5)}</strong></td>
-                <td><strong style={{ fontFamily: 'var(--font-mono)' }}>{s.end_time?.slice(0, 5)}</strong></td>
-                <td>{s.total_hours} Hours ({s.break_minutes}m break)</td>
-                <td>
-                  <span style={{ color: '#f59e0b', fontWeight: 600 }}>+{s.grace_late_in} mins</span>
-                </td>
-                <td>{s.half_day_min_hours} hrs</td>
-                <td>{s.full_day_min_hours} hrs</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => openEditModal(s)}>
-                      <Edit2 size={13} />
-                    </button>
-                    <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: '#ef4444' }} onClick={() => handleDelete(s.id)}>
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={shifts}
+        loading={loading}
+        rowKey="id"
+        defaultSortKey="name"
+        searchPlaceholder="Filter shifts by name, code, type, hours..."
+        exportFileName="Shifts_Schedules"
+        emptyMessage="No shift schedules configured yet."
+        columns={[
+          {
+            key: 'name',
+            label: 'Shift Name & Code',
+            sortable: true,
+            render: (s) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: s.color_code || '#2563eb', flexShrink: 0 }}></span>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{s.name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{s.code}</div>
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'shift_type',
+            label: 'Type',
+            sortable: true,
+            render: (s) => (
+              <span className="badge badge-inside">{s.shift_type}</span>
+            )
+          },
+          {
+            key: 'start_time',
+            label: 'Start Time',
+            sortable: true,
+            render: (s) => (
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>{s.start_time?.slice(0, 5)}</strong>
+            )
+          },
+          {
+            key: 'end_time',
+            label: 'End Time',
+            sortable: true,
+            render: (s) => (
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>{s.end_time?.slice(0, 5)}</strong>
+            )
+          },
+          {
+            key: 'total_hours',
+            label: 'Duration',
+            sortable: true,
+            render: (s) => (
+              <span>{s.total_hours} Hours ({s.break_minutes}m break)</span>
+            )
+          },
+          {
+            key: 'grace_late_in',
+            label: 'Late Grace',
+            sortable: true,
+            render: (s) => (
+              <span style={{ color: '#f59e0b', fontWeight: 600 }}>+{s.grace_late_in} mins</span>
+            )
+          },
+          {
+            key: 'half_day_min_hours',
+            label: 'Half Day Min',
+            sortable: true,
+            render: (s) => `${s.half_day_min_hours} hrs`
+          },
+          {
+            key: 'full_day_min_hours',
+            label: 'Full Day Min',
+            sortable: true,
+            render: (s) => `${s.full_day_min_hours} hrs`
+          },
+          {
+            key: 'actions',
+            label: 'Actions',
+            sortable: false,
+            align: 'center',
+            render: (s) => (
+              <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => openEditModal(s)} title="Edit Shift">
+                  <Edit2 size={13} />
+                </button>
+                <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: '#ef4444' }} onClick={() => handleDelete(s.id)} title="Delete Shift">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )
+          }
+        ]}
+      />
 
       {modalOpen && (
         <div className="modal-overlay" onClick={() => setModalOpen(false)}>

@@ -17,6 +17,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function TimesheetView() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -174,146 +175,169 @@ export default function TimesheetView() {
         </form>
       </div>
 
-      {/* Timesheet Table */}
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Staff / Student</th>
-              <th>Shift / Schedule</th>
-              <th>First IN (Arrival)</th>
-              <th>Last OUT (Exit)</th>
-              <th>Presence</th>
-              <th>Trips / Outings</th>
-              <th>Total Inside (Work)</th>
-              <th>Total Outside (Break)</th>
-              <th>Status</th>
-              <th>Timeline</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan="10" style={{ textAlign: 'center', padding: '3rem' }}>
-                  Loading timesheet data...
-                </td>
-              </tr>
-            ) : records.length === 0 ? (
-              <tr>
-                <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  No attendance records found for {date}.
-                </td>
-              </tr>
-            ) : (
-              records.map((r) => {
-                const isInside = r.current_status === 'INSIDE';
-                return (
-                  <tr key={r.user_id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          background: 'var(--bg-muted)',
-                          color: 'var(--text-main)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 700,
-                          fontSize: '0.85rem',
-                          overflow: 'hidden',
-                          border: '1px solid var(--border-color)'
-                        }}>
-                          {r.profile_photo ? (
-                            <img src={r.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            r.full_name?.charAt(0) || 'U'
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{r.full_name}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {r.user_code} • {r.department || 'General'}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{r.shift_name || 'Standard Shift'}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                        {r.shift_start?.slice(0, 5)} - {r.shift_end?.slice(0, 5)}
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: r.first_in ? '#10b981' : 'var(--text-light)' }}>
-                        {r.first_in || '--:--:--'}
-                      </div>
-                      {r.late_in_mins > 0 && (
-                        <span style={{ fontSize: '0.72rem', color: '#f43f5e', fontWeight: 600 }}>
-                          +{r.late_in_mins}m late
-                        </span>
-                      )}
-                    </td>
-
-                    <td>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: r.last_out ? '#f43f5e' : 'var(--text-light)' }}>
-                        {r.last_out || '--:--:--'}
-                      </div>
-                    </td>
-
-                    <td>
-                      <span className={`badge ${isInside ? 'badge-inside' : 'badge-absent'}`}>
-                        {r.current_status || 'OUTSIDE'}
-                      </span>
-                    </td>
-
-                    <td>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                        {r.total_trips_out || 0} {r.total_trips_out === 1 ? 'Trip' : 'Trips'}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        Went outside
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#0284c7' }}>
-                        {formatMins(r.total_inside_minutes)} ({r.total_hours || '0.00'}h)
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                        {formatMins(r.total_outside_minutes)}
-                      </div>
-                    </td>
-
-                    <td>
-                      <span className={`badge badge-${r.status?.toLowerCase().replace(/\s+/g, '') || 'absent'}`}>
-                        {r.status || 'Absent'}
-                      </span>
-                    </td>
-
-                    <td>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
-                        onClick={() => viewTimeline(r.user_id)}
-                      >
-                        <Eye size={13} />
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Timesheet DataTable */}
+      <DataTable
+        data={records}
+        loading={loading}
+        rowKey="user_id"
+        defaultSortKey="full_name"
+        searchPlaceholder="Quick filter employees, status, departments..."
+        exportFileName={`Timesheet_${date}`}
+        emptyMessage={`No attendance records found for ${date}.`}
+        columns={[
+          {
+            key: 'full_name',
+            label: 'Staff / Student',
+            sortable: true,
+            render: (r) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'var(--bg-muted)',
+                  color: 'var(--text-main)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  overflow: 'hidden',
+                  border: '1px solid var(--border-color)',
+                  flexShrink: 0
+                }}>
+                  {r.profile_photo ? (
+                    <img src={r.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    r.full_name?.charAt(0) || 'U'
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{r.full_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {r.user_code} • {r.department || 'General'}
+                  </div>
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'shift_name',
+            label: 'Shift / Schedule',
+            sortable: true,
+            render: (r) => (
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{r.shift_name || 'Standard Shift'}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  {r.shift_start?.slice(0, 5)} - {r.shift_end?.slice(0, 5)}
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'first_in',
+            label: 'First IN (Arrival)',
+            sortable: true,
+            render: (r) => (
+              <div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: r.first_in ? '#10b981' : 'var(--text-light)' }}>
+                  {r.first_in || '--:--:--'}
+                </div>
+                {r.late_in_mins > 0 && (
+                  <span style={{ fontSize: '0.72rem', color: '#f43f5e', fontWeight: 600 }}>
+                    +{r.late_in_mins}m late
+                  </span>
+                )}
+              </div>
+            )
+          },
+          {
+            key: 'last_out',
+            label: 'Last OUT (Exit)',
+            sortable: true,
+            render: (r) => (
+              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: r.last_out ? '#f43f5e' : 'var(--text-light)' }}>
+                {r.last_out || '--:--:--'}
+              </div>
+            )
+          },
+          {
+            key: 'current_status',
+            label: 'Presence',
+            sortable: true,
+            render: (r) => {
+              const isInside = r.current_status === 'INSIDE';
+              return (
+                <span className={`badge ${isInside ? 'badge-inside' : 'badge-absent'}`}>
+                  {r.current_status || 'OUTSIDE'}
+                </span>
+              );
+            }
+          },
+          {
+            key: 'total_trips_out',
+            label: 'Trips / Outings',
+            sortable: true,
+            render: (r) => (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                  {r.total_trips_out || 0} {r.total_trips_out === 1 ? 'Trip' : 'Trips'}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Went outside
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'total_inside_minutes',
+            label: 'Total Inside (Work)',
+            sortable: true,
+            render: (r) => (
+              <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#0284c7' }}>
+                {formatMins(r.total_inside_minutes)} ({r.total_hours || '0.00'}h)
+              </div>
+            )
+          },
+          {
+            key: 'total_outside_minutes',
+            label: 'Total Outside (Break)',
+            sortable: true,
+            render: (r) => (
+              <div style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                {formatMins(r.total_outside_minutes)}
+              </div>
+            )
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            sortable: true,
+            render: (r) => (
+              <span className={`badge badge-${r.status?.toLowerCase().replace(/\s+/g, '') || 'absent'}`}>
+                {r.status || 'Absent'}
+              </span>
+            )
+          },
+          {
+            key: 'actions',
+            label: 'Timeline',
+            sortable: false,
+            align: 'center',
+            render: (r) => (
+              <button 
+                className="btn btn-secondary" 
+                style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
+                onClick={() => viewTimeline(r.user_id)}
+                title="View punch audit timeline"
+              >
+                <Eye size={13} />
+                View
+              </button>
+            )
+          }
+        ]}
+      />
 
       {/* User Timeline Popup Modal */}
       {selectedUserTimeline && (

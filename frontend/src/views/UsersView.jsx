@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function UsersView({ shifts = [], onUsersChanged }) {
   const [users, setUsers] = useState([]);
@@ -421,159 +422,178 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
         </form>
       </div>
 
-      {/* Users Table */}
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Person Details</th>
-              <th>Type & Role</th>
-              <th>Contact & Mobile</th>
-              <th>Address / CPR</th>
-              <th>Shift / Hours</th>
-              <th>Biometric Face AI</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '3rem' }}>
-                  Loading personnel records...
-                </td>
-              </tr>
-            ) : users.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  No personnel found. Click "+ Register New Person" or import from HR Solution.
-                </td>
-              </tr>
-            ) : (
-              users.map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div 
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '50%',
-                          background: 'var(--bg-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 700,
-                          overflow: 'hidden',
-                          border: '2px solid var(--border-color)',
-                          cursor: 'pointer',
-                          transition: 'transform 0.15s ease'
-                        }}
-                        onClick={() => triggerQuickPhotoUpload(u)}
-                        title="Click to Upload / Change Photo"
-                      >
-                        {u.profile_photo ? (
-                          <img src={u.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          u.full_name?.charAt(0) || 'U'
-                        )}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{u.full_name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                          {u.user_code}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
+      {/* Users DataTable */}
+      <DataTable
+        data={users}
+        loading={loading}
+        rowKey="id"
+        defaultSortKey="full_name"
+        searchPlaceholder="Filter personnel by name, ID, phone, role, department..."
+        exportFileName="Personnel_Directory"
+        emptyMessage="No personnel records found. Click '+ Register New Person' to enroll."
+        columns={[
+          {
+            key: 'full_name',
+            label: 'Person Details',
+            sortable: true,
+            render: (u) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div 
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '50%',
+                    background: 'var(--bg-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    overflow: 'hidden',
+                    border: '2px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s ease',
+                    flexShrink: 0
+                  }}
+                  onClick={() => triggerQuickPhotoUpload(u)}
+                  title="Click to Upload / Change Photo"
+                >
+                  {u.profile_photo ? (
+                    <img src={u.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    u.full_name?.charAt(0) || 'U'
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{u.full_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    {u.user_code}
+                  </div>
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'designation',
+            label: 'Type & Role',
+            sortable: true,
+            render: (u) => (
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.designation || 'Staff'}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {u.department} • {u.user_type}
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'mobile',
+            label: 'Contact & Mobile',
+            sortable: true,
+            render: (u) => (
+              <div>
+                <div style={{ fontSize: '0.85rem' }}>{u.mobile || '--'}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email || '--'}</div>
+              </div>
+            )
+          },
+          {
+            key: 'address',
+            label: 'Address / CPR',
+            sortable: true,
+            render: (u) => (
+              <div>
+                <div style={{ fontSize: '0.85rem' }}>{u.address || '--'}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  CPR: {u.cpr_no || '--'}
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'shift_name',
+            label: 'Shift / Hours',
+            sortable: true,
+            render: (u) => (
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{u.shift_name || 'Standard'}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  {u.start_time?.slice(0, 5)} - {u.end_time?.slice(0, 5)}
+                </div>
+              </div>
+            )
+          },
+          {
+            key: 'has_face_enrolled',
+            label: 'Biometric Face AI',
+            sortable: true,
+            render: (u) => (
+              u.has_face_enrolled ? (
+                <span className="badge badge-present" style={{ fontSize: '0.7rem' }}>
+                  <CheckCircle2 size={12} />
+                  ENROLLED (128-D)
+                </span>
+              ) : (
+                <span className="badge badge-absent" style={{ fontSize: '0.7rem' }}>
+                  NO FACE DATA
+                </span>
+              )
+            )
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            sortable: true,
+            render: (u) => (
+              <span className={`badge ${u.status === 'Active' ? 'badge-present' : 'badge-absent'}`}>
+                {u.status}
+              </span>
+            )
+          },
+          {
+            key: 'actions',
+            label: 'Actions',
+            sortable: false,
+            align: 'center',
+            render: (u) => (
+              <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: 'var(--menu-accent)' }}
+                  onClick={() => triggerQuickPhotoUpload(u)}
+                  title="Quick Upload Photo"
+                >
+                  <Camera size={13} />
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
+                  onClick={() => openEditModal(u)}
+                  title="Edit User & Face"
+                >
+                  <Edit2 size={13} />
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
+                  onClick={() => handleDelete(u.id)}
+                  title="Deactivate"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )
+          }
+        ]}
+      />
 
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.designation || 'Staff'}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {u.department} • {u.user_type}
-                    </div>
-                  </td>
-
-                  <td>
-                    <div style={{ fontSize: '0.85rem' }}>{u.mobile || '--'}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email || '--'}</div>
-                  </td>
-
-                  <td>
-                    <div style={{ fontSize: '0.85rem' }}>{u.address || '--'}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                      CPR: {u.cpr_no || '--'}
-                    </div>
-                  </td>
-
-                  <td>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{u.shift_name || 'Standard'}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                      {u.start_time?.slice(0, 5)} - {u.end_time?.slice(0, 5)}
-                    </div>
-                  </td>
-
-                  <td>
-                    {u.has_face_enrolled ? (
-                      <span className="badge badge-present" style={{ fontSize: '0.7rem' }}>
-                        <CheckCircle2 size={12} />
-                        ENROLLED (128-D)
-                      </span>
-                    ) : (
-                      <span className="badge badge-absent" style={{ fontSize: '0.7rem' }}>
-                        NO FACE DATA
-                      </span>
-                    )}
-                  </td>
-
-                  <td>
-                    <span className={`badge ${u.status === 'Active' ? 'badge-present' : 'badge-absent'}`}>
-                      {u.status}
-                    </span>
-                  </td>
-
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: 'var(--menu-accent)' }}
-                        onClick={() => triggerQuickPhotoUpload(u)}
-                        title="Quick Upload Photo"
-                      >
-                        <Camera size={13} />
-                      </button>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
-                        onClick={() => openEditModal(u)}
-                        title="Edit User & Face"
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
-                        onClick={() => handleDelete(u.id)}
-                        title="Deactivate"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-        {/* Hidden Row Photo File Input */}
-        <input 
-          ref={rowFileInputRef} 
-          type="file" 
-          accept="image/*,.jpg,.jpeg,.png,.webp,.bmp" 
-          style={{ display: 'none' }} 
-          onChange={handleRowPhotoUpload} 
-        />
-      </div>
+      {/* Hidden Row Photo File Input */}
+      <input 
+        ref={rowFileInputRef} 
+        type="file" 
+        accept="image/*,.jpg,.jpeg,.png,.webp,.bmp" 
+        style={{ display: 'none' }} 
+        onChange={handleRowPhotoUpload} 
+      />
 
       {/* Add / Edit Modal */}
       {modalOpen && (

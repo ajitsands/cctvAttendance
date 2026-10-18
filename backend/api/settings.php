@@ -16,6 +16,9 @@ if ($method === 'GET') {
     foreach ($rawSettings as $row) {
         $settingsMap[$row['setting_key']] = $row['setting_value'];
     }
+    if (!isset($settingsMap['show_live_popup'])) {
+        $settingsMap['show_live_popup'] = '1';
+    }
 
     // Available Timezones for GCC and India
     $timezones = [
@@ -71,7 +74,8 @@ if ($method === 'GET') {
         'company_name', 'logo_url', 'footer_text', 'timezone', 'currency',
         'date_format', 'time_format', 'theme_header_color', 'theme_menu_color',
         'theme_mode', 'app_mode', 'face_match_threshold', 'punch_cooldown_seconds',
-        'hr_sync_enabled', 'hr_db_host', 'hr_db_name', 'hr_db_user', 'hr_db_pass'
+        'hr_sync_enabled', 'hr_db_host', 'hr_db_name', 'hr_db_user', 'hr_db_pass',
+        'show_live_popup'
     ];
 
     $stmt = $db->prepare("

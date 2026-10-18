@@ -30,6 +30,7 @@ INSERT INTO `system_settings` (`setting_key`, `setting_value`, `group_name`, `de
 ('app_mode', 'office', 'system', 'Operation Mode (office or school)'),
 ('face_match_threshold', '0.65', 'ai', 'Face Match Cosine Similarity Threshold (0.50 - 0.90)'),
 ('punch_cooldown_seconds', '60', 'ai', 'Cooldown seconds between consecutive punches for same person on same camera'),
+('show_live_popup', '1', 'ui', 'Show Real-Time Identification Popup Toast (1=Yes, 0=No)'),
 ('hr_sync_enabled', '1', 'hr_integration', 'Enable synchronization with hr_solution_db'),
 ('hr_db_host', '127.0.0.1', 'hr_integration', 'HR Database Host'),
 ('hr_db_name', 'hr_solution_db', 'hr_integration', 'HR Database Name'),

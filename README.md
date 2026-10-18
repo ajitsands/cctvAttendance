@@ -1,7 +1,26 @@
-# CCTVAttendance V1.0
+# CCTVAttendance V1.1
 ### SaNDS Lab Middle East W.L.L - CCTV AI Multi-Gate Face Attendance System
 
 A high-performance, offline-first CCTV facial recognition attendance system designed for schools, universities, offices, and commercial facilities. Built with ReactJS, PHP Middleware, MySQL, and local OpenCV Deep Learning face models (YuNet + SFace).
+
+---
+
+## What's New in V1.1
+
+1. **High-Performance Universal DataTable Across All Views**:
+   - Integrated across **Timesheet, Users Directory, Cameras List, Shifts, Reports, and HR Sync Audit History**.
+   - Blazing fast search and instant column sorting (Ascending / Descending).
+   - Selectable page sizes (10, 25, 50, 100 entries) with smart pagination controls.
+   - Built-in 1-Click CSV/Excel data export.
+   - Optimized for large enterprise datasets with minimal DOM footprint.
+2. **Real-Time Facial Identification Floating Popup Toast**:
+   - Ultra-attractive floating toast in the **bottom-right corner** of the screen.
+   - Displays real-time person photo/avatar, bold uppercase full name, employee ID, department, gate, and AI confidence score.
+   - Color-coded badges for **PUNCH IN (ENTRY)** (emerald) and **PUNCH OUT (EXIT)** (pink) with live timestamp.
+   - Visual countdown progress bar with auto-dismiss.
+3. **Admin Settings Control for Popups**:
+   - Dedicated toggle in Settings: **"Real-Time Face Identification Popup Toast"** (`show_live_popup`).
+   - Admin can enable or disable the floating popup at any time with instant persistence in `system_settings`.
 
 ---
 

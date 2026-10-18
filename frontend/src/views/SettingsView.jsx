@@ -28,6 +28,7 @@ export default function SettingsView({ onSettingsSaved }) {
     app_mode: 'office',
     face_match_threshold: '0.65',
     punch_cooldown_seconds: '60',
+    show_live_popup: '1',
     hr_sync_enabled: '1',
     hr_db_host: '127.0.0.1',
     hr_db_name: 'hr_solution_db',
@@ -342,6 +343,26 @@ export default function SettingsView({ onSettingsSaved }) {
                 />
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Prevents spam if user lingers in frame</span>
               </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 700 }}>Real-Time Face Identification Popup Toast</span>
+                <span style={{ fontSize: '0.75rem', color: (settings.show_live_popup === '1' || settings.show_live_popup === true) ? '#10b981' : '#f43f5e', fontWeight: 800 }}>
+                  {(settings.show_live_popup === '1' || settings.show_live_popup === true) ? '● POPUP ENABLED (YES)' : '○ POPUP DISABLED (NO)'}
+                </span>
+              </label>
+              <select 
+                className="select" 
+                value={settings.show_live_popup ?? '1'}
+                onChange={e => handleChange('show_live_popup', e.target.value)}
+              >
+                <option value="1">Yes - Show Attractive Identification Popup on Right Screen Corner (Recommended)</option>
+                <option value="0">No - Disable Popup Toast (Silent / Feed Stream Only)</option>
+              </select>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                When enabled, a floating identification card displays the person's photo, name, IN/OUT direction, date/time, and camera gate in the bottom-right corner.
+              </span>
             </div>
 
             <div style={{ marginTop: '0.75rem', padding: '0.85rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>

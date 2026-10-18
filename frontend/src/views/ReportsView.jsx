@@ -12,6 +12,7 @@ import {
   AlertTriangle 
 } from 'lucide-react';
 import { api } from '../api';
+import DataTable from '../components/DataTable';
 
 export default function ReportsView() {
   const [startDate, setStartDate] = useState(new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
@@ -197,54 +198,98 @@ export default function ReportsView() {
         </div>
       )}
 
-      {/* Detailed Table */}
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Personnel</th>
-              <th>Department</th>
-              <th>First IN</th>
-              <th>Last OUT</th>
-              <th>Trips Out</th>
-              <th>Inside Hours</th>
-              <th>Break Mins</th>
-              <th>Late Mins</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan="10" style={{ textAlign: 'center', padding: '3rem' }}>Generating report...</td></tr>
-            ) : (!reportData?.rows || reportData.rows.length === 0) ? (
-              <tr><td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No records in selected date range.</td></tr>
-            ) : (
-              reportData.rows.map(r => (
-                <tr key={`${r.user_id}-${r.attendance_date}`}>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.attendance_date}</td>
-                  <td>
-                    <div style={{ fontWeight: 700 }}>{r.full_name}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{r.user_code}</div>
-                  </td>
-                  <td>{r.department || 'General'}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', color: '#10b981', fontWeight: 700 }}>{r.first_in || '--'}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', color: '#f43f5e', fontWeight: 700 }}>{r.last_out || '--'}</td>
-                  <td><strong>{r.total_trips_out || 0}</strong></td>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0284c7' }}>{r.total_hours || '0.00'} hrs</td>
-                  <td>{r.total_outside_minutes || 0} mins</td>
-                  <td>{r.late_in_mins > 0 ? <span style={{ color: '#f43f5e', fontWeight: 700 }}>+{r.late_in_mins}m</span> : 'On-Time'}</td>
-                  <td>
-                    <span className={`badge badge-${r.status?.toLowerCase().replace(/\s+/g, '') || 'absent'}`}>
-                      {r.status}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Detailed DataTable */}
+      <DataTable
+        data={reportData?.rows || []}
+        loading={loading}
+        rowKey={(r) => `${r.user_id}-${r.attendance_date}`}
+        defaultSortKey="attendance_date"
+        defaultSortDir="desc"
+        searchPlaceholder="Filter report rows by person, date, department, status..."
+        exportFileName={`Attendance_Report_${startDate}_to_${endDate}`}
+        emptyMessage="No attendance records in selected date range."
+        columns={[
+          {
+            key: 'attendance_date',
+            label: 'Date',
+            sortable: true,
+            render: (r) => (
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.attendance_date}</span>
+            )
+          },
+          {
+            key: 'full_name',
+            label: 'Personnel',
+            sortable: true,
+            render: (r) => (
+              <div>
+                <div style={{ fontWeight: 700 }}>{r.full_name}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{r.user_code}</div>
+              </div>
+            )
+          },
+          {
+            key: 'department',
+            label: 'Department',
+            sortable: true,
+            render: (r) => r.department || 'General'
+          },
+          {
+            key: 'first_in',
+            label: 'First IN',
+            sortable: true,
+            render: (r) => (
+              <span style={{ fontFamily: 'var(--font-mono)', color: '#10b981', fontWeight: 700 }}>{r.first_in || '--'}</span>
+            )
+          },
+          {
+            key: 'last_out',
+            label: 'Last OUT',
+            sortable: true,
+            render: (r) => (
+              <span style={{ fontFamily: 'var(--font-mono)', color: '#f43f5e', fontWeight: 700 }}>{r.last_out || '--'}</span>
+            )
+          },
+          {
+            key: 'total_trips_out',
+            label: 'Trips Out',
+            sortable: true,
+            render: (r) => <strong>{r.total_trips_out || 0}</strong>
+          },
+          {
+            key: 'total_hours',
+            label: 'Inside Hours',
+            sortable: true,
+            render: (r) => (
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0284c7' }}>{r.total_hours || '0.00'} hrs</span>
+            )
+          },
+          {
+            key: 'total_outside_minutes',
+            label: 'Break Mins',
+            sortable: true,
+            render: (r) => `${r.total_outside_minutes || 0} mins`
+          },
+          {
+            key: 'late_in_mins',
+            label: 'Late Mins',
+            sortable: true,
+            render: (r) => (
+              r.late_in_mins > 0 ? <span style={{ color: '#f43f5e', fontWeight: 700 }}>+{r.late_in_mins}m</span> : 'On-Time'
+            )
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            sortable: true,
+            render: (r) => (
+              <span className={`badge badge-${r.status?.toLowerCase().replace(/\s+/g, '') || 'absent'}`}>
+                {r.status}
+              </span>
+            )
+          }
+        ]}
+      />
     </div>
   );
 }

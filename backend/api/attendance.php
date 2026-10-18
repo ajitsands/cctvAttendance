@@ -65,11 +65,19 @@ if ($action === 'punch' && $method === 'POST') {
     if ($lastPunch) {
         $secondsSince = strtotime($customTime) - strtotime($lastPunch['punch_time']);
         if ($secondsSince < $cooldownSec && $secondsSince >= 0) {
-            // Already logged recently, return current summary without duplicate row
+            // Already logged recently, return current summary with user data for live notification
             $existingSummary = AttendanceCalculator::calculateUserDay($userId, $punchDate);
+            $stmtInfo = $db->prepare("SELECT id, user_code, full_name, user_type, department, designation, profile_photo FROM users WHERE id = ?");
+            $stmtInfo->execute([$userId]);
+            $userInfo = $stmtInfo->fetch();
             jsonResponse([
                 'debounced' => true,
                 'message' => "Punch debounced ($secondsSince s ago). Attendance already registered.",
+                'direction' => $direction,
+                'gate_name' => $gateName,
+                'punch_time' => $customTime,
+                'confidence' => $confidence,
+                'user' => $userInfo,
                 'summary' => $existingSummary
             ]);
         }

@@ -92,7 +92,7 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
       });
 
       fetchRecentAndStatus();
-      if (onPunchLogged) onPunchLogged();
+      if (onPunchLogged) onPunchLogged(data);
     } catch (err) {
       setLastActionMsg({
         success: false,
