@@ -1,0 +1,41 @@
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Python Engine
+__pycache__/
+*.py[cod]
+*$py.class
+engine/venv/
+engine/snapshots/
+engine/temp/
+
+# Uploads, snapshots and temporary frames
+uploads/snapshots/*
+!uploads/snapshots/.gitkeep
+backend/uploads/snapshots/*
+!backend/uploads/snapshots/.gitkeep
+uploads/temp/
+backend/uploads/temp/
+backend/logs/*
+!backend/logs/.gitkeep
+
+# User-uploaded dynamic profile images (exclude runtime user photos from git)
+uploads/profiles/*
+!uploads/profiles/.gitkeep
+backend/uploads/profiles/*
+!backend/uploads/profiles/.gitkeep
+frontend/public/uploads/profiles/*
+!frontend/public/uploads/profiles/.gitkeep
+
+# IDE & OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
