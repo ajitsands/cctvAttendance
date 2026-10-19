@@ -11,7 +11,7 @@ export default function Footer({ footerText }) {
           <span>{footerText || defaultText}</span>
         </div>
         <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-          <span>Version 1.0.0 (Local Build)</span>
+          <span>Version 2.0.0 (Local Build)</span>
           <span>•</span>
           <span>Offline Edge AI Engine (YuNet + SFace)</span>
           <span>•</span>

@@ -62,7 +62,7 @@ export default function Header({
               </span>
             </h1>
             <span className="brand-subtitle">
-              CCTVAttendance V1.1 • AI Multi-Gate Face Attendance System • CCTV Live Feed: 192.168.100.113
+              CCTVAttendance V2.0 • AI Multi-Gate Face Attendance System • CCTV Live Feed: 192.168.100.113
             </span>
           </div>
         </div>
