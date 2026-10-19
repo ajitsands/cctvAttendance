@@ -5,12 +5,15 @@ import LiveMonitorView from './views/LiveMonitorView';
 import DashboardView from './views/DashboardView';
 import TimesheetView from './views/TimesheetView';
 import UsersView from './views/UsersView';
+import GuestsView from './views/GuestsView';
+import BlacklistView from './views/BlacklistView';
 import CamerasView from './views/CamerasView';
 import ShiftsView from './views/ShiftsView';
 import HrSyncView from './views/HrSyncView';
 import ReportsView from './views/ReportsView';
 import SettingsView from './views/SettingsView';
 import LivePunchPopup from './components/LivePunchPopup';
+import BlacklistAlertModal from './components/BlacklistAlertModal';
 import { api } from './api';
 
 export default function App() {
@@ -23,6 +26,11 @@ export default function App() {
   const [activePopupPunch, setActivePopupPunch] = useState(null);
   const lastSeenPunchIdRef = React.useRef(null);
   const isInitialLoadRef = React.useRef(true);
+
+  // Real-Time Blacklist Breach Security Polling
+  const [activeSecurityAlert, setActiveSecurityAlert] = useState(null);
+  const lastBreachIdRef = useRef(null);
+  const isBreachInitialLoadRef = useRef(true);
 
   // Load initial system data
   const loadInitialData = async () => {
@@ -101,6 +109,33 @@ export default function App() {
     return () => clearInterval(timer);
   }, [settings?.show_live_popup]);
 
+  // Real-Time Blacklist Security Breach Polling
+  useEffect(() => {
+    let timer;
+    const checkSecurityBreaches = async () => {
+      try {
+        const res = await api.pollSecurityAlerts(lastBreachIdRef.current || 0);
+        const data = res.data;
+        if (data && typeof data.latest_id !== 'undefined') {
+          if (isBreachInitialLoadRef.current) {
+            lastBreachIdRef.current = data.latest_id;
+            isBreachInitialLoadRef.current = false;
+          } else if (data.has_new && data.new_breaches && data.new_breaches.length > 0) {
+            lastBreachIdRef.current = data.latest_id;
+            // Pop the highest priority breach alert
+            setActiveSecurityAlert(data.new_breaches[0]);
+          }
+        }
+      } catch (err) {
+        // silent polling catch
+      }
+    };
+
+    checkSecurityBreaches();
+    timer = setInterval(checkSecurityBreaches, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
   const handlePunchLogged = (punchData) => {
     loadInitialData();
     if (punchData) {
@@ -155,6 +190,12 @@ export default function App() {
         {currentTab === 'users' && (
           <UsersView shifts={shifts} onUsersChanged={loadInitialData} />
         )}
+        {currentTab === 'guests' && (
+          <GuestsView />
+        )}
+        {currentTab === 'blacklist' && (
+          <BlacklistView />
+        )}
         {currentTab === 'cameras' && (
           <CamerasView onCamerasChanged={loadInitialData} />
         )}
@@ -177,6 +218,18 @@ export default function App() {
         <LivePunchPopup 
           punch={activePopupPunch} 
           onClose={() => setActivePopupPunch(null)} 
+        />
+      )}
+
+      {/* Real-Time Blacklist Security Breach Modal Alert */}
+      {activeSecurityAlert && (
+        <BlacklistAlertModal
+          alert={activeSecurityAlert}
+          onClose={() => setActiveSecurityAlert(null)}
+          onViewBreaches={() => {
+            setActiveSecurityAlert(null);
+            setCurrentTab('blacklist');
+          }}
         />
       )}
 

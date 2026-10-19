@@ -24,6 +24,10 @@ uploads/temp/
 backend/uploads/temp/
 backend/logs/*
 !backend/logs/.gitkeep
+uploads/breaches/*
+!uploads/breaches/.gitkeep
+uploads/guests/*
+!uploads/guests/.gitkeep
 
 # User-uploaded dynamic profile images (exclude runtime user photos from git)
 uploads/profiles/*

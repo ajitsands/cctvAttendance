@@ -12,7 +12,9 @@ import {
   Settings, 
   Sun, 
   Moon,
-  Sparkles
+  Sparkles,
+  ShieldAlert,
+  UserCheck
 } from 'lucide-react';
 
 export default function Header({ 
@@ -29,6 +31,8 @@ export default function Header({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'timesheet', label: 'Daily Timesheet', icon: Clock },
     { id: 'users', label: 'Staff & Faces', icon: Users },
+    { id: 'guests', label: 'Guests & Customers', icon: UserCheck },
+    { id: 'blacklist', label: 'Security & Blacklist', icon: ShieldAlert },
     { id: 'cameras', label: 'Cameras & Gates', icon: Video },
     { id: 'shifts', label: 'Shifts & Hours', icon: CalendarClock },
     { id: 'hr_sync', label: 'HR Solution Sync', icon: RefreshCw },

@@ -110,6 +110,51 @@ export const api = {
     return request(`${API_BASE}/reports.php?${query}`);
   },
 
+  // Version 2.0: Blacklist & Security Management
+  getBlacklist: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`${API_BASE}/blacklist.php?${query}`);
+  },
+  getBlacklistBreaches: (status = 'all') => {
+    return request(`${API_BASE}/blacklist.php?breaches=1&status=${status}`);
+  },
+  saveBlacklistedPerson: (person) => {
+    if (person.id) {
+      return request(`${API_BASE}/blacklist.php?id=${person.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(person)
+      });
+    }
+    return request(`${API_BASE}/blacklist.php`, {
+      method: 'POST',
+      body: JSON.stringify(person)
+    });
+  },
+  deleteBlacklistedPerson: (id) => request(`${API_BASE}/blacklist.php?id=${id}`, {
+    method: 'DELETE'
+  }),
+  resolveBreach: (breachId, resolvedBy, resolvedNotes) => request(`${API_BASE}/blacklist.php?action=resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ breach_id: breachId, resolved_by: resolvedBy, resolved_notes: resolvedNotes })
+  }),
+
+  // Version 2.0: Guests & Customer Movement Tracking
+  getGuests: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`${API_BASE}/guests.php?${query}`);
+  },
+  getGuestTimeline: (id) => request(`${API_BASE}/guests.php?id=${id}&logs=1`),
+  saveGuest: (id, guest) => request(`${API_BASE}/guests.php?id=${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(guest)
+  }),
+  deleteGuest: (id) => request(`${API_BASE}/guests.php?id=${id}`, {
+    method: 'DELETE'
+  }),
+
+  // Version 2.0: Real-Time Security Alert Stream
+  pollSecurityAlerts: (lastId = 0) => request(`${API_BASE}/security_alerts.php?last_id=${lastId}`),
+
   // Offline Face AI Engine Bridge
   extractFaceEmbedding: async (base64Image) => {
     return request(`${ENGINE_BASE}/extract_embedding`, {

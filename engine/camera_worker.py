@@ -49,6 +49,16 @@ class LowLatencyCameraWorker:
         self.last_punch_time = {}
         self.cooldown_seconds = 60
 
+        # Version 2.0: Blacklist & Guest Tracking structures
+        self.enrolled_blacklist = []
+        self.blacklist_lock = threading.Lock()
+        self.last_blacklist_alert_time = {}
+
+        self.enrolled_guests = []
+        self.guests_lock = threading.Lock()
+        self.last_guest_punch_time = {}
+        self.last_unknown_enroll_time = 0
+
         # Frame buffers & locks
         self.latest_raw_frame = None
         self.latest_frame_time = 0
@@ -72,6 +82,14 @@ class LowLatencyCameraWorker:
     def set_enrolled_users(self, users):
         with self.users_lock:
             self.enrolled_users = list(users)
+
+    def set_blacklisted_persons(self, blacklisted):
+        with self.blacklist_lock:
+            self.enrolled_blacklist = list(blacklisted)
+
+    def set_guests(self, guests):
+        with self.guests_lock:
+            self.enrolled_guests = list(guests)
 
     def trigger_punch(self, user, confidence, frame_snapshot=None):
         uid = user["id"]
@@ -105,6 +123,90 @@ class LowLatencyCameraWorker:
             requests.post(f"{PHP_API_URL}/attendance.php?action=punch", json=payload, timeout=2)
         except Exception as e:
             print(f"[Camera {self.camera_id}] Punch delivery note: {e}")
+
+    def trigger_blacklist_breach(self, person, confidence, frame_snapshot=None):
+        pid = person["id"]
+        now = time.time()
+        if pid in self.last_blacklist_alert_time:
+            if now - self.last_blacklist_alert_time[pid] < 30: # 30s cooldown
+                return
+        self.last_blacklist_alert_time[pid] = now
+        print(f"[SECURITY ALERT] 🚨 BLACKLIST DETECTED: {person['full_name']} ({person.get('person_code')}) - Threat: {person.get('threat_level')} at {self.gate} ({self.role})!")
+
+        payload = {
+            "blacklisted_person_id": pid,
+            "camera_id": self.camera_id,
+            "gate_name": self.gate,
+            "direction": self.role,
+            "confidence_score": confidence
+        }
+        if frame_snapshot is not None:
+            try:
+                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                b64_snap = base64.b64encode(buffer).decode('utf-8')
+                payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
+            except Exception:
+                pass
+        try:
+            requests.post(f"{PHP_API_URL}/blacklist.php?action=log_breach", json=payload, timeout=2)
+        except Exception as e:
+            print(f"[Camera {self.camera_id}] Blacklist breach alert note: {e}")
+
+    def trigger_guest_movement(self, guest, confidence, frame_snapshot=None):
+        gid = guest["id"]
+        now = time.time()
+        if gid in self.last_guest_punch_time:
+            if now - self.last_guest_punch_time[gid] < 45: # 45s cooldown
+                return
+        self.last_guest_punch_time[gid] = now
+        print(f"[Camera {self.camera_id} - {self.role}] >>> GUEST MOVEMENT: {guest.get('guest_name', 'Guest')} ({guest.get('guest_code')}) as {self.role} at {self.gate}")
+
+        payload = {
+            "guest_id": gid,
+            "camera_id": self.camera_id,
+            "gate_name": self.gate,
+            "direction": self.role,
+            "confidence_score": confidence
+        }
+        if frame_snapshot is not None:
+            try:
+                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                b64_snap = base64.b64encode(buffer).decode('utf-8')
+                payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
+            except Exception:
+                pass
+        try:
+            requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=2)
+        except Exception as e:
+            print(f"[Camera {self.camera_id}] Guest movement note: {e}")
+
+    def trigger_new_guest_enroll(self, embedding, confidence, frame_snapshot=None):
+        now = time.time()
+        if now - self.last_unknown_enroll_time < 12: # 12s cooldown
+            return
+        self.last_unknown_enroll_time = now
+        print(f"[Camera {self.camera_id} - {self.role}] >>> UNKNOWN PERSON: Auto-enrolling new Guest / Customer at {self.gate} ({self.role})...")
+
+        payload = {
+            "face_embedding": embedding,
+            "camera_id": self.camera_id,
+            "gate_name": self.gate,
+            "direction": self.role,
+            "confidence_score": confidence
+        }
+        if frame_snapshot is not None:
+            try:
+                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                b64_snap = base64.b64encode(buffer).decode('utf-8')
+                payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
+            except Exception:
+                pass
+        try:
+            resp = requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=2)
+            if resp.status_code == 201:
+                threading.Thread(target=manager.sync_guests, daemon=True).start()
+        except Exception as e:
+            print(f"[Camera {self.camera_id}] New guest enrollment note: {e}")
 
     def _capture_loop(self):
         """Dedicated high-speed thread: continuously reads RTSP frames to prevent socket buffer accumulation."""
@@ -200,34 +302,89 @@ class LowLatencyCameraWorker:
                         feature = self.engine.recognizer.feature(aligned)
                         emb = feature.flatten().tolist()
 
-                        best_user = None
-                        best_score = -1.0
-                        best_conf = 0.0
-
-                        for u in users_list:
-                            is_match, score, norm_conf = self.engine.compare_embeddings(emb, u["embedding"])
-                            if is_match and score > best_score:
-                                best_score = score
-                                best_user = u
-                                best_conf = norm_conf
-
                         bx = int(orig_face[0])
                         by = int(orig_face[1])
                         bw = int(orig_face[2])
                         bh = int(orig_face[3])
                         bbox = [bx, by, bw, bh]
 
+                        crop = raw_frame[max(0, by):min(h, by+bh), max(0, bx):min(w, bx+bw)]
+                        crop_copy = crop.copy() if crop.size > 0 else None
+
+                        # TIER 1: Check Blacklisted Persons (Zero-Tolerance Security Priority)
+                        best_blk = None
+                        best_blk_score = -1.0
+                        best_blk_conf = 0.0
+                        with self.blacklist_lock:
+                            blk_list = list(self.enrolled_blacklist)
+
+                        for b in blk_list:
+                            is_match, score, norm_conf = self.engine.compare_embeddings(emb, b["embedding"])
+                            if is_match and score > best_blk_score:
+                                best_blk_score = score
+                                best_blk = b
+                                best_blk_conf = norm_conf
+
+                        if best_blk:
+                            new_detected.append((bbox, best_blk["full_name"], best_blk_conf, "BLACKLIST", best_blk.get("threat_level", "HIGH")))
+                            threading.Thread(
+                                target=self.trigger_blacklist_breach,
+                                args=(best_blk, best_blk_conf, crop_copy),
+                                daemon=True
+                            ).start()
+                            continue
+
+                        # TIER 2: Check Active Employees / Staff
+                        best_user = None
+                        best_user_score = -1.0
+                        best_user_conf = 0.0
+                        for u in users_list:
+                            is_match, score, norm_conf = self.engine.compare_embeddings(emb, u["embedding"])
+                            if is_match and score > best_user_score:
+                                best_user_score = score
+                                best_user = u
+                                best_user_conf = norm_conf
+
                         if best_user:
-                            new_detected.append((bbox, best_user["full_name"], best_conf, best_user.get("user_code", "")))
-                            crop = raw_frame[max(0, by):min(h, by+bh), max(0, bx):min(w, bx+bw)]
-                            # Non-blocking async punch dispatch
+                            new_detected.append((bbox, best_user["full_name"], best_user_conf, "EMPLOYEE", best_user.get("user_code", "")))
                             threading.Thread(
                                 target=self.trigger_punch,
-                                args=(best_user, best_conf, crop.copy() if crop.size > 0 else None),
+                                args=(best_user, best_user_conf, crop_copy),
+                                daemon=True
+                            ).start()
+                            continue
+
+                        # TIER 3: Check Existing Guests / Customers
+                        best_guest = None
+                        best_guest_score = -1.0
+                        best_guest_conf = 0.0
+                        with self.guests_lock:
+                            gst_list = list(self.enrolled_guests)
+
+                        for g in gst_list:
+                            is_match, score, norm_conf = self.engine.compare_embeddings(emb, g["embedding"])
+                            if is_match and score > best_guest_score:
+                                best_guest_score = score
+                                best_guest = g
+                                best_guest_conf = norm_conf
+
+                        if best_guest:
+                            g_name = best_guest.get("guest_name", "Guest")
+                            g_code = best_guest.get("guest_code", "GST")
+                            new_detected.append((bbox, g_name, best_guest_conf, "GUEST", g_code))
+                            threading.Thread(
+                                target=self.trigger_guest_movement,
+                                args=(best_guest, best_guest_conf, crop_copy),
                                 daemon=True
                             ).start()
                         else:
-                            new_detected.append((bbox, "Unenrolled Visitor", round(conf * 100, 1), None))
+                            # Brand new unknown face -> Auto-enroll as Guest!
+                            new_detected.append((bbox, "New Guest / Customer", round(conf * 100, 1), "NEW_GUEST", "Auto-Enrolling..."))
+                            threading.Thread(
+                                target=self.trigger_new_guest_enroll,
+                                args=(emb, round(conf * 100, 1), crop_copy),
+                                daemon=True
+                            ).start()
 
                 with self.detections_lock:
                     self.current_detections = new_detected
@@ -269,57 +426,74 @@ class LowLatencyCameraWorker:
             display = raw_frame
             h, w = display.shape[:2]
 
-            # High-visibility futuristic HUD
+            # High-visibility multi-tier HUD
             for item in detections:
-                box, name, c_score = item[0], item[1], item[2]
-                user_code = item[3] if len(item) > 3 else None
+                box = item[0]
+                name = item[1]
+                c_score = item[2]
+                det_type = item[3] if len(item) > 3 else "UNKNOWN"
+                det_code = item[4] if len(item) > 4 else ""
                 bx, by, bw, bh = box
-                is_recognized = user_code is not None
 
-                if is_recognized:
-                    color = (0, 235, 100) if self.role == 'IN' else (236, 72, 153) # Green for IN, Vibrant Pink for OUT
+                line_len = max(24, min(bw, bh) // 4)
+                thick = 3
+
+                if det_type == "BLACKLIST":
+                    # Flashing Red Alert HUD
+                    color = (0, 0, 245)
+                    corner_color = (0, 0, 255)
+                    text_bg_color = (0, 0, 180)
+                    title_label = f" ! SECURITY ALERT: {name.upper()} ! "
+                    sub_label = f" BLACKLIST ({det_code}) | {self.gate} | {int(c_score)}% "
+                elif det_type == "GUEST":
+                    # Sky Blue / Cyan Guest HUD
+                    color = (255, 185, 0)
+                    corner_color = (255, 215, 60)
+                    text_bg_color = (180, 110, 0)
+                    title_label = f" GUEST: {name.upper()} "
+                    sub_label = f" {det_code} | {self.role} LOGGED | {int(c_score)}% "
+                elif det_type == "EMPLOYEE":
+                    # Green for IN, Vibrant Pink for OUT
+                    color = (0, 235, 100) if self.role == 'IN' else (236, 72, 153)
                     corner_color = (0, 255, 150) if self.role == 'IN' else (255, 120, 190)
                     text_bg_color = (0, 150, 60) if self.role == 'IN' else (180, 20, 100)
-
-                    line_len = max(24, min(bw, bh) // 4)
-                    thick = 3
-                    # Top-left
-                    cv2.line(display, (bx, by), (bx + line_len, by), corner_color, thick + 2)
-                    cv2.line(display, (bx, by), (bx, by + line_len), corner_color, thick + 2)
-                    # Top-right
-                    cv2.line(display, (bx + bw, by), (bx + bw - line_len, by), corner_color, thick + 2)
-                    cv2.line(display, (bx + bw, by), (bx + bw, by + line_len), corner_color, thick + 2)
-                    # Bottom-left
-                    cv2.line(display, (bx, by + bh), (bx + line_len, by + bh), corner_color, thick + 2)
-                    cv2.line(display, (bx, by + bh), (bx, by + bh - line_len), corner_color, thick + 2)
-                    # Bottom-right
-                    cv2.line(display, (bx + bw, by + bh), (bx + bw - line_len, by + bh), corner_color, thick + 2)
-                    cv2.line(display, (bx + bw, by + bh), (bx + bw, by + bh - line_len), corner_color, thick + 2)
-
-                    cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
-
                     title_label = f" {name.upper()} "
-                    sub_label = f" {user_code} | {self.role} VERIFIED | {int(c_score)}% "
-
-                    (tw1, th1), _ = cv2.getTextSize(title_label, cv2.FONT_HERSHEY_DUPLEX, 0.85, 2)
-                    (tw2, th2), _ = cv2.getTextSize(sub_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-                    badge_w = max(tw1, tw2) + 16
-                    badge_h = th1 + th2 + 20
-                    badge_y = max(0, by - badge_h - 6)
-
-                    cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), text_bg_color, -1)
-                    cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), (255, 255, 255), 1)
-
-                    cv2.putText(display, title_label, (bx + 4, badge_y + th1 + 6), cv2.FONT_HERSHEY_DUPLEX, 0.85, (255, 255, 255), 2)
-                    cv2.putText(display, sub_label, (bx + 8, badge_y + th1 + th2 + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 220), 1)
+                    sub_label = f" {det_code} | {self.role} VERIFIED | {int(c_score)}% "
                 else:
-                    color = (0, 165, 255) # Warning Amber
-                    cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
-                    label = f" FACE DETECTED ({int(c_score)}%) "
-                    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
-                    badge_y = max(0, by - th - 12)
-                    cv2.rectangle(display, (bx, badge_y), (bx + tw + 10, by), color, -1)
-                    cv2.putText(display, label, (bx + 4, by - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 2)
+                    # New Guest Auto-Enrolling HUD (Amber)
+                    color = (0, 165, 255)
+                    corner_color = (0, 200, 255)
+                    text_bg_color = (0, 120, 200)
+                    title_label = " NEW VISITOR DETECTED "
+                    sub_label = " Auto-Enrolling Guest Profile... "
+
+                # Draw corner brackets
+                # Top-left
+                cv2.line(display, (bx, by), (bx + line_len, by), corner_color, thick + 2)
+                cv2.line(display, (bx, by), (bx, by + line_len), corner_color, thick + 2)
+                # Top-right
+                cv2.line(display, (bx + bw, by), (bx + bw - line_len, by), corner_color, thick + 2)
+                cv2.line(display, (bx + bw, by), (bx + bw, by + line_len), corner_color, thick + 2)
+                # Bottom-left
+                cv2.line(display, (bx, by + bh), (bx + line_len, by + bh), corner_color, thick + 2)
+                cv2.line(display, (bx, by + bh), (bx, by + bh - line_len), corner_color, thick + 2)
+                # Bottom-right
+                cv2.line(display, (bx + bw, by + bh), (bx + bw - line_len, by + bh), corner_color, thick + 2)
+                cv2.line(display, (bx + bw, by + bh), (bx + bw, by + bh - line_len), corner_color, thick + 2)
+
+                cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
+
+                (tw1, th1), _ = cv2.getTextSize(title_label, cv2.FONT_HERSHEY_DUPLEX, 0.85, 2)
+                (tw2, th2), _ = cv2.getTextSize(sub_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+                badge_w = max(tw1, tw2) + 16
+                badge_h = th1 + th2 + 20
+                badge_y = max(0, by - badge_h - 6)
+
+                cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), text_bg_color, -1)
+                cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), (255, 255, 255), 1)
+
+                cv2.putText(display, title_label, (bx + 4, badge_y + th1 + 6), cv2.FONT_HERSHEY_DUPLEX, 0.85, (255, 255, 255), 2)
+                cv2.putText(display, sub_label, (bx + 8, badge_y + th1 + th2 + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 220), 1)
 
             if w != target_w or h != target_h:
                 display = cv2.resize(display, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
@@ -361,6 +535,10 @@ class CameraManager:
         self.lock = threading.Lock()
         self.shared_enrolled_users = []
         self.users_lock = threading.Lock()
+        self.shared_blacklisted_persons = []
+        self.blacklist_lock = threading.Lock()
+        self.shared_guests = []
+        self.guests_lock = threading.Lock()
 
     def sync_users(self):
         try:
@@ -394,6 +572,69 @@ class CameraManager:
         except Exception as e:
             print(f"[CameraManager] User sync note: {e}")
 
+    def sync_blacklist(self):
+        try:
+            resp = requests.get(f"{PHP_API_URL}/blacklist.php?action=sync_embeddings", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("data", []) if isinstance(data, dict) else data
+                loaded = []
+                for p in items:
+                    raw_emb = p.get("face_embedding")
+                    if raw_emb:
+                        try:
+                            emb = json.loads(raw_emb) if isinstance(raw_emb, str) else raw_emb
+                            loaded.append({
+                                "id": p["id"],
+                                "person_code": p["person_code"],
+                                "full_name": p["full_name"],
+                                "threat_level": p.get("threat_level", "High"),
+                                "reason": p.get("reason", ""),
+                                "embedding": emb
+                            })
+                        except Exception:
+                            pass
+                with self.blacklist_lock:
+                    self.shared_blacklisted_persons = loaded
+
+                with self.lock:
+                    for w in self.workers.values():
+                        w.set_blacklisted_persons(loaded)
+                print(f"[CameraManager] Blacklisted persons synchronized: {len(loaded)}")
+        except Exception as e:
+            print(f"[CameraManager] Blacklist sync note: {e}")
+
+    def sync_guests(self):
+        try:
+            resp = requests.get(f"{PHP_API_URL}/guests.php?action=sync_embeddings", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("data", []) if isinstance(data, dict) else data
+                loaded = []
+                for g in items:
+                    raw_emb = g.get("face_embedding")
+                    if raw_emb:
+                        try:
+                            emb = json.loads(raw_emb) if isinstance(raw_emb, str) else raw_emb
+                            loaded.append({
+                                "id": g["id"],
+                                "guest_code": g["guest_code"],
+                                "guest_name": g.get("guest_name", "Guest"),
+                                "guest_type": g.get("guest_type", "Visitor"),
+                                "embedding": emb
+                            })
+                        except Exception:
+                            pass
+                with self.guests_lock:
+                    self.shared_guests = loaded
+
+                with self.lock:
+                    for w in self.workers.values():
+                        w.set_guests(loaded)
+                print(f"[CameraManager] Guests synchronized: {len(loaded)}")
+        except Exception as e:
+            print(f"[CameraManager] Guest sync note: {e}")
+
     def sync_cameras(self):
         try:
             resp = requests.get(f"{PHP_API_URL}/cameras.php", timeout=3)
@@ -419,12 +660,16 @@ class CameraManager:
                                 w.stop()
                                 new_w = LowLatencyCameraWorker(cid, rtsp, role, gate, name, ip)
                                 new_w.set_enrolled_users(self.shared_enrolled_users)
+                                new_w.set_blacklisted_persons(self.shared_blacklisted_persons)
+                                new_w.set_guests(self.shared_guests)
                                 new_w.start()
                                 self.workers[cid] = new_w
                         else:
                             print(f"[CameraManager] Initializing Camera {cid} -> Role: {role}, IP: {ip}")
                             new_w = LowLatencyCameraWorker(cid, rtsp, role, gate, name, ip)
                             new_w.set_enrolled_users(self.shared_enrolled_users)
+                            new_w.set_blacklisted_persons(self.shared_blacklisted_persons)
+                            new_w.set_guests(self.shared_guests)
                             new_w.start()
                             self.workers[cid] = new_w
 
@@ -461,6 +706,8 @@ class CameraManager:
 
     def start_background_sync(self):
         self.sync_users()
+        self.sync_blacklist()
+        self.sync_guests()
         self.sync_cameras()
 
         def _sync_loop():
@@ -468,6 +715,8 @@ class CameraManager:
                 time.sleep(10)
                 self.sync_cameras()
                 self.sync_users()
+                self.sync_blacklist()
+                self.sync_guests()
 
         t = threading.Thread(target=_sync_loop, daemon=True)
         t.start()
@@ -614,6 +863,22 @@ class StreamHandler(BaseHTTPRequestHandler):
                 'success': True,
                 'enrolled_faces': len(manager.shared_enrolled_users),
                 'users': [u['full_name'] for u in manager.shared_enrolled_users]
+            }).encode('utf-8'))
+
+        elif path == '/reload_blacklist':
+            manager.sync_blacklist()
+            self._set_cors(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'blacklisted_count': len(manager.shared_blacklisted_persons)
+            }).encode('utf-8'))
+
+        elif path == '/reload_guests':
+            manager.sync_guests()
+            self._set_cors(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'guests_count': len(manager.shared_guests)
             }).encode('utf-8'))
 
         else:
