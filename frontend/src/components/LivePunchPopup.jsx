@@ -35,7 +35,9 @@ export default function LivePunchPopup({ punch, onClose, duration = 6000 }) {
       setProgress((prev) => {
         if (prev <= decrement) {
           clearInterval(interval);
-          if (onCloseRef.current) onCloseRef.current();
+          setTimeout(() => {
+            if (onCloseRef.current) onCloseRef.current();
+          }, 0);
           return 0;
         }
         return prev - decrement;

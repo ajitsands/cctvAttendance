@@ -26,7 +26,8 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
   const [direction, setDirection] = useState('IN');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastActionMsg, setLastActionMsg] = useState(null);
-  const [streamError, setStreamError] = useState(false);
+  const [streamErrorIn, setStreamErrorIn] = useState(false);
+  const [streamErrorOut, setStreamErrorOut] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
   const [engineStatus, setEngineStatus] = useState(null);
 
@@ -103,24 +104,33 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
     }
   };
 
-  const reloadStream = () => {
-    setStreamError(false);
+  const reloadStream = async () => {
+    setStreamErrorIn(false);
+    setStreamErrorOut(false);
     setStreamKey(Date.now());
+    try {
+      await fetch('http://127.0.0.1:8001/reload_cameras');
+    } catch (e) {}
   };
 
   const inCamera = cameras.find(c => c.camera_role === 'IN') || cameras[0] || {
+    id: 1,
     camera_name: 'Main Entrance Camera (IN)',
+    ip_address: '192.168.100.114',
+    status: 'Offline',
+    gate_name: 'Main Gate'
+  };
+
+  const outCamera = cameras.find(c => c.camera_role === 'OUT') || cameras[1] || {
+    id: 2,
+    camera_name: 'Main Exit Camera (OUT)',
     ip_address: '192.168.100.113',
     status: 'Online',
     gate_name: 'Main Gate'
   };
 
-  const outCamera = cameras.find(c => c.camera_role === 'OUT') || cameras[1] || {
-    camera_name: 'Main Exit Camera (OUT)',
-    ip_address: '192.168.100.114',
-    status: 'Offline',
-    gate_name: 'Main Gate'
-  };
+  const inCamStatus = engineStatus?.cameras?.find(c => c.id == inCamera.id);
+  const outCamStatus = engineStatus?.cameras?.find(c => c.id == outCamera.id);
 
   return (
     <div>
@@ -131,13 +141,13 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             Live Dual-Camera Identification Feed
           </h2>
           <p className="page-desc">
-            Direct real-time RTSP stream from camera 192.168.100.113 with offline deep learning facial detection.
+            Direct real-time RTSP dual streams with offline deep learning facial biometrics & automatic IN/OUT tracking.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button className="btn btn-secondary" onClick={reloadStream}>
             <RefreshCw size={15} />
-            Reload Camera Stream
+            Reload Camera Streams
           </button>
         </div>
       </div>
@@ -161,8 +171,8 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
 
       {/* Dual Camera Stream Grid */}
       <div className="grid-cols-2" style={{ marginBottom: '1.75rem' }}>
-        {/* Camera 1: LIVE CCTV FEED from 192.168.100.113 */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden', border: '2px solid rgba(236, 72, 153, 0.3)' }}>
+        {/* Camera 1: IN (Entry Gate) */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden', border: inCamStatus?.connected ? '2px solid rgba(52, 211, 153, 0.4)' : '1px solid var(--border-color)' }}>
           <div style={{
             padding: '0.85rem 1.25rem',
             background: 'linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%)',
@@ -172,12 +182,20 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             alignItems: 'center'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <span className="badge badge-in">CAMERA 1 • IN (ENTRY)</span>
+              <span className="badge badge-in">CAMERA {inCamera.id} • IN (ENTRY)</span>
               <strong>{inCamera.camera_name}</strong>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
-              <span className="live-dot"></span>
-              <span style={{ fontWeight: 700, color: '#34d399' }}>LIVE: 192.168.100.113</span>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: inCamStatus?.connected ? '#34d399' : '#f43f5e',
+                boxShadow: inCamStatus?.connected ? '0 0 8px #34d399' : 'none'
+              }}></span>
+              <span style={{ fontWeight: 700, color: inCamStatus?.connected ? '#34d399' : '#fca5a5' }}>
+                {inCamStatus?.connected ? 'LIVE' : 'OFFLINE'}: {inCamera.ip_address}
+              </span>
             </div>
           </div>
 
@@ -190,13 +208,12 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             justifyContent: 'center',
             overflow: 'hidden'
           }}>
-            {/* Real Live MJPEG Stream from Camera 192.168.100.113 */}
-            {!streamError ? (
+            {!streamErrorIn ? (
               <img 
-                key={streamKey}
-                src={`http://127.0.0.1:8001/video_feed/1?t=${streamKey}`}
-                alt="Live Camera Feed 192.168.100.113"
-                onError={() => setStreamError(true)}
+                key={`in-${inCamera.id}-${streamKey}`}
+                src={`http://127.0.0.1:8001/video_feed/${inCamera.id}?t=${streamKey}`}
+                alt={`Live Camera IN (${inCamera.ip_address})`}
+                onError={() => setStreamErrorIn(true)}
                 style={{
                   width: '100%',
                   height: '100%',
@@ -206,8 +223,8 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             ) : (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
                 <AlertCircle size={44} color="#f43f5e" style={{ marginBottom: '0.5rem' }} />
-                <p style={{ fontWeight: 700, color: '#fff' }}>Stream Reconnecting...</p>
-                <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>Connecting to RTSP rtsp://admin:admin@123@192.168.100.113:554</p>
+                <p style={{ fontWeight: 700, color: '#fff' }}>Camera Offline / Reconnecting...</p>
+                <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>RTSP Stream: {inCamera.ip_address}:554</p>
                 <button className="btn btn-primary" style={{ marginTop: '0.75rem', fontSize: '0.8rem' }} onClick={reloadStream}>
                   Retry Stream
                 </button>
@@ -232,18 +249,21 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
               border: '1px solid rgba(255,255,255,0.1)'
             }}>
               <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center' }}>
-                <span style={{ color: '#34d399', fontWeight: 700 }}>● 192.168.100.113 (Port 554 RTSP)</span>
+                <span style={{ color: inCamStatus?.connected ? '#34d399' : '#fca5a5', fontWeight: 700 }}>
+                  ● {inCamera.ip_address} (Port 554 RTSP)
+                </span>
                 <span>•</span>
-                <span>UNV (Uniview) IPC</span>
-                <span>•</span>
-                <span style={{ color: '#f472b6', fontWeight: 600 }}>1920x1080 Full HD</span>
+                <span>Gate: {inCamera.gate_name}</span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <span style={{ background: '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
-                  FPS: {engineStatus?.fps || 20}
+                <span style={{ background: inCamStatus?.connected ? '#10b981' : '#64748b', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  FPS: {inCamStatus?.fps || 0}
                 </span>
-                <span style={{ background: '#ec4899', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
-                  YuNet AI
+                <span style={{ background: '#0284c7', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  LAG: {inCamStatus?.latency_ms ? `${inCamStatus.latency_ms}ms` : '<30ms'}
+                </span>
+                <span style={{ background: '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  IN (ENTRY)
                 </span>
               </div>
             </div>
@@ -251,21 +271,30 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
         </div>
 
         {/* Camera 2: OUT (Exit Gate) */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', border: outCamStatus?.connected ? '2px solid rgba(236, 72, 153, 0.5)' : '1px solid var(--border-color)' }}>
           <div style={{
             padding: '0.85rem 1.25rem',
-            background: 'linear-gradient(135deg, #1e1b4b 0%, #31103f 100%)',
+            background: 'linear-gradient(135deg, #31103f 0%, #1e1b4b 100%)',
             color: '#fff',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <span className="badge badge-out">CAMERA 2 • OUT (EXIT)</span>
+              <span className="badge badge-out">CAMERA {outCamera.id} • OUT (EXIT)</span>
               <strong>{outCamera.camera_name}</strong>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
-              <span style={{ color: '#fca5a5' }}>Exit Gate Sensor</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: outCamStatus?.connected ? '#ec4899' : '#f43f5e',
+                boxShadow: outCamStatus?.connected ? '0 0 8px #ec4899' : 'none'
+              }}></span>
+              <span style={{ fontWeight: 700, color: outCamStatus?.connected ? '#f472b6' : '#fca5a5' }}>
+                {outCamStatus?.connected ? 'LIVE' : 'OFFLINE'}: {outCamera.ip_address}
+              </span>
             </div>
           </div>
 
@@ -276,46 +305,32 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#94a3b8',
-            flexDirection: 'column',
-            gap: '0.75rem'
+            overflow: 'hidden'
           }}>
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'radial-gradient(circle, rgba(236,72,153,0.08) 0%, rgba(9,13,22,0.95) 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <div style={{
-                width: '150px',
-                height: '180px',
-                border: '2px dashed #ec4899',
-                borderRadius: '10px',
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 0 20px rgba(236,72,153,0.25)'
-              }}>
-                <span style={{
-                  position: 'absolute',
-                  top: '-12px',
-                  left: '10px',
-                  background: 'linear-gradient(135deg, #ec4899, #db2777)',
-                  color: '#fff',
-                  fontSize: '0.68rem',
-                  fontWeight: 800,
-                  padding: '2px 8px',
-                  borderRadius: '4px'
-                }}>
-                  EXIT CAMERA SENSOR
-                </span>
-                <LogOut size={42} color="#ec4899" style={{ opacity: 0.7 }} />
+            {!streamErrorOut ? (
+              <img 
+                key={`out-${outCamera.id}-${streamKey}`}
+                src={`http://127.0.0.1:8001/video_feed/${outCamera.id}?t=${streamKey}`}
+                alt={`Live Camera OUT (${outCamera.ip_address})`}
+                onError={() => setStreamErrorOut(true)}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                }}
+              />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                <AlertCircle size={44} color="#f43f5e" style={{ marginBottom: '0.5rem' }} />
+                <p style={{ fontWeight: 700, color: '#fff' }}>Camera Offline / Reconnecting...</p>
+                <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>RTSP Stream: {outCamera.ip_address}:554</p>
+                <button className="btn btn-primary" style={{ marginTop: '0.75rem', fontSize: '0.8rem' }} onClick={reloadStream}>
+                  Retry Stream
+                </button>
               </div>
-            </div>
+            )}
 
+            {/* Live Camera Feed Overlay Bar */}
             <div style={{
               position: 'absolute',
               bottom: '10px',
@@ -332,8 +347,24 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
               color: '#f8fafc',
               border: '1px solid rgba(255,255,255,0.1)'
             }}>
-              <span>Gate: Main Reception Door (Exit)</span>
-              <span style={{ color: '#f472b6', fontWeight: 600 }}>Multi-Gate Tracking Ready</span>
+              <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center' }}>
+                <span style={{ color: outCamStatus?.connected ? '#f472b6' : '#fca5a5', fontWeight: 700 }}>
+                  ● {outCamera.ip_address} (Port 554 RTSP)
+                </span>
+                <span>•</span>
+                <span>Gate: {outCamera.gate_name}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <span style={{ background: outCamStatus?.connected ? '#ec4899' : '#64748b', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  FPS: {outCamStatus?.fps || 0}
+                </span>
+                <span style={{ background: '#0284c7', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  LAG: {outCamStatus?.latency_ms ? `${outCamStatus.latency_ms}ms` : '<30ms'}
+                </span>
+                <span style={{ background: '#ec4899', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800 }}>
+                  OUT (EXIT)
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -522,7 +553,7 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             <strong>Live CCTV Credentials Verified:</strong>
             <div style={{ marginTop: '0.35rem', fontFamily: 'var(--font-mono)' }}>
               Camera IP: 192.168.100.113<br/>
-              Port: 554 (RTSP Dahua / CP Plus)<br/>
+              Port: 554 (RTSP UNV (Recommended) / Dahua / CP Plus)<br/>
               Auth: admin / admin@123
             </div>
           </div>

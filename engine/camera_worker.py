@@ -5,78 +5,84 @@ import json
 import base64
 import threading
 import urllib.parse
+import socket
 import cv2
 import numpy as np
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
-# Essential: Force TCP to eliminate H.264 packet loss & disable internal buffer delay
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|max_delay;500000"
+# Essential low-latency settings:
+# - rtsp_transport;tcp: prevents UDP packet drops
+# - fflags;nobuffer: completely eliminates FFmpeg internal input buffer
+# - flags;low_delay: instructs decoder to use minimal latency
+# - max_delay;0: drop any accumulated network packets immediately
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;0"
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_engine import OfflineFaceEngine
 
 PHP_API_URL = os.environ.get("PHP_API_URL", "http://127.0.0.1:8000/api")
 ENGINE_PORT = int(os.environ.get("ENGINE_PORT", 8001))
 
 class LowLatencyCameraWorker:
-    def __init__(self, camera_id=1, rtsp_url="rtsp://admin:admin%40123@192.168.100.113:554/cam/realmonitor?channel=1&subtype=0", role="IN", gate="Main Gate"):
+    """
+    Decoupled Multi-Threaded RTSP Engine for an individual camera:
+    - Thread 1 (Capture): Continuously reads RTSP frames with zero buffering.
+    - Thread 2 (AI): Asynchronous YuNet face detection & SFace feature extraction.
+    - Thread 3 (Render): High-contrast HUD and pre-encoded JPEG stream.
+    """
+    def __init__(self, camera_id=1, rtsp_url="", role="IN", gate="Main Gate", camera_name="Camera", ip="192.168.100.113"):
         self.camera_id = camera_id
         self.rtsp_url = rtsp_url
-        self.role = role
+        self.role = role.upper() if role else "IN"
         self.gate = gate
+        self.camera_name = camera_name
+        self.ip = ip
         self.is_running = False
-        self.engine = OfflineFaceEngine()
+
+        # Face AI Engine (YuNet + SFace)
+        self.engine = OfflineFaceEngine(score_threshold=0.50)
         self.enrolled_users = []
+        self.users_lock = threading.Lock()
         self.last_punch_time = {}
         self.cooldown_seconds = 60
 
-        # Latest annotated display frame ready for browser streaming
-        self.latest_display_frame = None
-        self.lock = threading.Lock()
-        
+        # Frame buffers & locks
+        self.latest_raw_frame = None
+        self.latest_frame_time = 0
+        self.raw_frame_id = 0
+        self.frame_lock = threading.Lock()
+
+        # Detections
+        self.current_detections = []
+        self.detections_lock = threading.Lock()
+
+        # JPEG encoded frame ready for web clients
+        self.latest_jpeg = None
+        self.jpeg_id = 0
+        self.jpeg_lock = threading.Lock()
+
+        # Metrics
         self.fps = 0
         self.frame_count = 0
         self.is_connected = False
 
-    def sync_enrolled_users(self):
-        try:
-            resp = requests.get(f"{PHP_API_URL}/users.php", timeout=2)
-            if resp.status_code == 200:
-                data = resp.json()
-                users = data.get("data", []) if isinstance(data, dict) else data
-                loaded = []
-                for u in users:
-                    raw_emb = u.get("face_embedding")
-                    if raw_emb:
-                        try:
-                            emb = json.loads(raw_emb) if isinstance(raw_emb, str) else raw_emb
-                            loaded.append({
-                                "id": u["id"],
-                                "user_code": u["user_code"],
-                                "full_name": u["full_name"],
-                                "department": u.get("department", ""),
-                                "profile_photo": u.get("profile_photo"),
-                                "embedding": emb
-                            })
-                        except Exception:
-                            pass
-                with self.lock:
-                    self.enrolled_users = loaded
-                print(f"[Camera {self.camera_id}] Enrolled users in memory: {len(self.enrolled_users)}")
-        except Exception:
-            pass
+    def set_enrolled_users(self, users):
+        with self.users_lock:
+            self.enrolled_users = list(users)
 
     def trigger_punch(self, user, confidence, frame_snapshot=None):
         uid = user["id"]
         now = time.time()
-        
+
         if uid in self.last_punch_time:
             if now - self.last_punch_time[uid] < self.cooldown_seconds:
                 return
 
         self.last_punch_time[uid] = now
-        print(f"[Camera {self.camera_id}] >>> PUNCH DETECTED: {user['full_name']} ({user['user_code']}) - Conf: {confidence}%")
+        print(f"[Camera {self.camera_id} - {self.role}] >>> PUNCH DETECTED: {user['full_name']} ({user['user_code']}) as {self.role} at {self.gate} - Conf: {confidence}%")
 
         payload = {
             "user_id": uid,
@@ -98,213 +104,377 @@ class LowLatencyCameraWorker:
         try:
             requests.post(f"{PHP_API_URL}/attendance.php?action=punch", json=payload, timeout=2)
         except Exception as e:
-            print(f"[Camera {self.camera_id}] Punch error: {e}")
+            print(f"[Camera {self.camera_id}] Punch delivery note: {e}")
 
-    def run_stream_loop(self):
-        print(f"[Camera {self.camera_id}] Starting Real-Time Stream on {self.rtsp_url}...")
-        self.is_running = True
-        self.sync_enrolled_users()
-
-        last_sync = time.time()
-        fps_timer = time.time()
+    def _capture_loop(self):
+        """Dedicated high-speed thread: continuously reads RTSP frames to prevent socket buffer accumulation."""
+        print(f"[Camera {self.camera_id}] Capture thread started on {self.rtsp_url} ({self.role} Gate)...")
         fps_counter = 0
-
-        # Persist detected faces across frames for smooth display
-        current_detected = []
-        face_check_interval = 2 # Check face every 2 frames for near-instant detection (<30ms)
+        fps_timer = time.time()
 
         while self.is_running:
+            if not self.rtsp_url:
+                time.sleep(1.0)
+                continue
+
             cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             if not cap.isOpened():
-                print(f"[Camera {self.camera_id}] Reconnecting to UNV camera...")
                 self.is_connected = False
-                time.sleep(3)
+                time.sleep(2.0)
                 continue
 
             self.is_connected = True
-            print(f"[Camera {self.camera_id}] Connected to UNV Camera 192.168.100.113 live stream!")
+            print(f"[Camera {self.camera_id} ({self.role})] >>> RTSP Connected: {self.ip} <<<")
 
             while self.is_running and cap.isOpened():
                 ret, frame = cap.read()
                 if not ret or frame is None:
-                    print(f"[Camera {self.camera_id}] Stream disconnected, reconnecting...")
                     self.is_connected = False
                     break
 
+                now = time.time()
+                with self.frame_lock:
+                    self.latest_raw_frame = frame
+                    self.latest_frame_time = now
+                    self.raw_frame_id += 1
+
                 self.frame_count += 1
                 fps_counter += 1
-                if time.time() - fps_timer >= 1.0:
+                if now - fps_timer >= 1.0:
                     self.fps = fps_counter
                     fps_counter = 0
-                    fps_timer = time.time()
-
-                h, w = frame.shape[:2]
-
-                # Run fast face detection every 2 frames
-                if self.frame_count % face_check_interval == 0:
-                    try:
-                        # Scale down to 960x540 (optimal HD for detecting faces at natural 1.5m - 3.5m distance)
-                        scale_w, scale_h = 960, 540
-                        scale_x = w / scale_w
-                        scale_y = h / scale_h
-                        small = cv2.resize(frame, (scale_w, scale_h))
-
-                        self.engine.detector.setInputSize((scale_w, scale_h))
-                        _, faces = self.engine.detector.detect(small)
-
-                        new_detected = []
-                        if faces is not None and len(faces) > 0:
-                            with self.lock:
-                                users_list = list(self.enrolled_users)
-
-                            # Process up to 5 people simultaneously
-                            for face in faces[:5]:
-                                conf = float(face[-1])
-                                if conf < 0.40:
-                                    continue
-
-                                orig_face = face.copy()
-                                orig_face[0] *= scale_x
-                                orig_face[1] *= scale_y
-                                orig_face[2] *= scale_x
-                                orig_face[3] *= scale_y
-                                for p in range(4, 14, 2):
-                                    orig_face[p] *= scale_x
-                                    orig_face[p+1] *= scale_y
-
-                                aligned = self.engine.recognizer.alignCrop(frame, orig_face)
-                                feature = self.engine.recognizer.feature(aligned)
-                                emb = feature.flatten().tolist()
-
-                                best_user = None
-                                best_score = -1.0
-                                best_conf = 0.0
-
-                                for u in users_list:
-                                    is_match, score, norm_conf = self.engine.compare_embeddings(emb, u["embedding"])
-                                    if is_match and score > best_score:
-                                        best_score = score
-                                        best_user = u
-                                        best_conf = norm_conf
-
-                                bx = int(orig_face[0])
-                                by = int(orig_face[1])
-                                bw = int(orig_face[2])
-                                bh = int(orig_face[3])
-                                bbox = [bx, by, bw, bh]
-
-                                if best_user:
-                                    new_detected.append((bbox, best_user["full_name"], best_conf, best_user.get("user_code", "")))
-                                    crop = frame[max(0, by):min(h, by+bh), max(0, bx):min(w, bx+bw)]
-                                    self.trigger_punch(best_user, best_conf, crop if crop.size > 0 else None)
-                                else:
-                                    new_detected.append((bbox, "Unenrolled Visitor", round(conf * 100, 1), None))
-
-                        current_detected = new_detected
-                    except Exception as detect_err:
-                        print(f"[Camera {self.camera_id}] Live detection notice: {detect_err}")
-
-                # Draw high-visibility futuristic HUD & Person Name on frame
-                display = frame.copy()
-                for item in current_detected:
-                    box = item[0]
-                    name = item[1]
-                    c_score = item[2]
-                    user_code = item[3] if len(item) > 3 else None
-                    bx, by, bw, bh = box
-                    is_recognized = user_code is not None
-
-                    if is_recognized:
-                        color = (0, 235, 100) # Bright Emerald Green
-                        corner_color = (0, 255, 150)
-                        text_bg_color = (0, 150, 60)
-                        
-                        # Draw high-tech corner brackets
-                        line_len = max(24, min(bw, bh) // 4)
-                        thick = 3
-                        # Top-left
-                        cv2.line(display, (bx, by), (bx + line_len, by), corner_color, thick + 2)
-                        cv2.line(display, (bx, by), (bx, by + line_len), corner_color, thick + 2)
-                        # Top-right
-                        cv2.line(display, (bx + bw, by), (bx + bw - line_len, by), corner_color, thick + 2)
-                        cv2.line(display, (bx + bw, by), (bx + bw, by + line_len), corner_color, thick + 2)
-                        # Bottom-left
-                        cv2.line(display, (bx, by + bh), (bx + line_len, by + bh), corner_color, thick + 2)
-                        cv2.line(display, (bx, by + bh), (bx, by + bh - line_len), corner_color, thick + 2)
-                        # Bottom-right
-                        cv2.line(display, (bx + bw, by + bh), (bx + bw - line_len, by + bh), corner_color, thick + 2)
-                        cv2.line(display, (bx + bw, by + bh), (bx + bw, by + bh - line_len), corner_color, thick + 2)
-                        
-                        # Main box
-                        cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
-
-                        # Two-tier Prominent Name Badge
-                        title_label = f" {name.upper()} "
-                        sub_label = f" {user_code} | PRESENT | {int(c_score)}% "
-                        
-                        (tw1, th1), _ = cv2.getTextSize(title_label, cv2.FONT_HERSHEY_DUPLEX, 0.85, 2)
-                        (tw2, th2), _ = cv2.getTextSize(sub_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-                        badge_w = max(tw1, tw2) + 16
-                        badge_h = th1 + th2 + 20
-                        badge_y = max(0, by - badge_h - 6)
-
-                        # Solid high-contrast background
-                        cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), text_bg_color, -1)
-                        cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), (255, 255, 255), 1)
-
-                        # Clear white & light green text labels
-                        cv2.putText(display, title_label, (bx + 4, badge_y + th1 + 6), cv2.FONT_HERSHEY_DUPLEX, 0.85, (255, 255, 255), 2)
-                        cv2.putText(display, sub_label, (bx + 8, badge_y + th1 + th2 + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 220), 1)
-                    else:
-                        color = (0, 165, 255) # Warning Amber
-                        cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
-                        label = f" FACE DETECTED ({int(c_score)}%) "
-                        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
-                        badge_y = max(0, by - th - 12)
-                        cv2.rectangle(display, (bx, badge_y), (bx + tw + 10, by), color, -1)
-                        cv2.putText(display, label, (bx + 4, by - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 2)
-
-                # Store latest display frame
-                with self.lock:
-                    self.latest_display_frame = display
-
-                if time.time() - last_sync > 10:
-                    self.sync_enrolled_users()
-                    last_sync = time.time()
-
-                time.sleep(0.001)
+                    fps_timer = now
 
             cap.release()
+            time.sleep(0.5)
 
-    def get_jpeg_frame(self, target_width=800):
+    def _ai_loop(self):
+        """Asynchronous face recognition thread: processes latest frame without stalling video ingest."""
+        last_processed_id = -1
+        scale_w, scale_h = 640, 360 # 16:9 ratio matching 1920x1080 (takes ~20ms on YuNet)
+
+        while self.is_running:
+            raw_frame = None
+            curr_id = 0
+            with self.frame_lock:
+                if self.latest_raw_frame is not None and self.raw_frame_id != last_processed_id:
+                    raw_frame = self.latest_raw_frame
+                    curr_id = self.raw_frame_id
+
+            if raw_frame is None:
+                time.sleep(0.01)
+                continue
+
+            last_processed_id = curr_id
+            h, w = raw_frame.shape[:2]
+            scale_x = w / scale_w
+            scale_y = h / scale_h
+
+            try:
+                small = cv2.resize(raw_frame, (scale_w, scale_h))
+                self.engine.detector.setInputSize((scale_w, scale_h))
+                _, faces = self.engine.detector.detect(small)
+
+                new_detected = []
+                if faces is not None and len(faces) > 0:
+                    with self.users_lock:
+                        users_list = list(self.enrolled_users)
+
+                    for face in faces[:5]:
+                        conf = float(face[-1])
+                        if conf < 0.40:
+                            continue
+
+                        orig_face = face.copy()
+                        orig_face[0] *= scale_x
+                        orig_face[1] *= scale_y
+                        orig_face[2] *= scale_x
+                        orig_face[3] *= scale_y
+                        for p in range(4, 14, 2):
+                            orig_face[p] *= scale_x
+                            orig_face[p+1] *= scale_y
+
+                        aligned = self.engine.recognizer.alignCrop(raw_frame, orig_face)
+                        feature = self.engine.recognizer.feature(aligned)
+                        emb = feature.flatten().tolist()
+
+                        best_user = None
+                        best_score = -1.0
+                        best_conf = 0.0
+
+                        for u in users_list:
+                            is_match, score, norm_conf = self.engine.compare_embeddings(emb, u["embedding"])
+                            if is_match and score > best_score:
+                                best_score = score
+                                best_user = u
+                                best_conf = norm_conf
+
+                        bx = int(orig_face[0])
+                        by = int(orig_face[1])
+                        bw = int(orig_face[2])
+                        bh = int(orig_face[3])
+                        bbox = [bx, by, bw, bh]
+
+                        if best_user:
+                            new_detected.append((bbox, best_user["full_name"], best_conf, best_user.get("user_code", "")))
+                            crop = raw_frame[max(0, by):min(h, by+bh), max(0, bx):min(w, bx+bw)]
+                            # Non-blocking async punch dispatch
+                            threading.Thread(
+                                target=self.trigger_punch,
+                                args=(best_user, best_conf, crop.copy() if crop.size > 0 else None),
+                                daemon=True
+                            ).start()
+                        else:
+                            new_detected.append((bbox, "Unenrolled Visitor", round(conf * 100, 1), None))
+
+                with self.detections_lock:
+                    self.current_detections = new_detected
+            except Exception:
+                pass
+
+            time.sleep(0.015)
+
+    def _render_loop(self):
+        """Pre-encodes live frame with futuristic HUD at ~30 FPS ready for instant client dispatch."""
+        target_w, target_h = 800, 450
+        role_label = f"CAMERA {self.camera_id} • {self.role} (GATE)"
+
+        while self.is_running:
+            raw_frame = None
+            is_conn = False
+            with self.frame_lock:
+                if self.latest_raw_frame is not None:
+                    raw_frame = self.latest_raw_frame.copy()
+                    is_conn = self.is_connected
+
+            if raw_frame is None or not is_conn:
+                blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                # Draw dark high-tech placeholder
+                cv2.rectangle(blank, (0, 0), (target_w, target_h), (12, 16, 26), -1)
+                cv2.putText(blank, f"SaNDS Lab - {self.camera_name}", (40, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(blank, f"Role: {self.role} • IP: {self.ip} (Port 554 RTSP)", (40, 235), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (236, 72, 153) if self.role == 'OUT' else (52, 211, 153), 1)
+                cv2.putText(blank, "Status: Reconnecting / Searching Network...", (40, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (148, 163, 184), 1)
+                _, buf = cv2.imencode('.jpg', blank, [cv2.IMWRITE_JPEG_QUALITY, 60])
+                with self.jpeg_lock:
+                    self.latest_jpeg = buf.tobytes()
+                    self.jpeg_id += 1
+                time.sleep(0.1)
+                continue
+
+            with self.detections_lock:
+                detections = list(self.current_detections)
+
+            display = raw_frame
+            h, w = display.shape[:2]
+
+            # High-visibility futuristic HUD
+            for item in detections:
+                box, name, c_score = item[0], item[1], item[2]
+                user_code = item[3] if len(item) > 3 else None
+                bx, by, bw, bh = box
+                is_recognized = user_code is not None
+
+                if is_recognized:
+                    color = (0, 235, 100) if self.role == 'IN' else (236, 72, 153) # Green for IN, Vibrant Pink for OUT
+                    corner_color = (0, 255, 150) if self.role == 'IN' else (255, 120, 190)
+                    text_bg_color = (0, 150, 60) if self.role == 'IN' else (180, 20, 100)
+
+                    line_len = max(24, min(bw, bh) // 4)
+                    thick = 3
+                    # Top-left
+                    cv2.line(display, (bx, by), (bx + line_len, by), corner_color, thick + 2)
+                    cv2.line(display, (bx, by), (bx, by + line_len), corner_color, thick + 2)
+                    # Top-right
+                    cv2.line(display, (bx + bw, by), (bx + bw - line_len, by), corner_color, thick + 2)
+                    cv2.line(display, (bx + bw, by), (bx + bw, by + line_len), corner_color, thick + 2)
+                    # Bottom-left
+                    cv2.line(display, (bx, by + bh), (bx + line_len, by + bh), corner_color, thick + 2)
+                    cv2.line(display, (bx, by + bh), (bx, by + bh - line_len), corner_color, thick + 2)
+                    # Bottom-right
+                    cv2.line(display, (bx + bw, by + bh), (bx + bw - line_len, by + bh), corner_color, thick + 2)
+                    cv2.line(display, (bx + bw, by + bh), (bx + bw, by + bh - line_len), corner_color, thick + 2)
+
+                    cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
+
+                    title_label = f" {name.upper()} "
+                    sub_label = f" {user_code} | {self.role} VERIFIED | {int(c_score)}% "
+
+                    (tw1, th1), _ = cv2.getTextSize(title_label, cv2.FONT_HERSHEY_DUPLEX, 0.85, 2)
+                    (tw2, th2), _ = cv2.getTextSize(sub_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+                    badge_w = max(tw1, tw2) + 16
+                    badge_h = th1 + th2 + 20
+                    badge_y = max(0, by - badge_h - 6)
+
+                    cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), text_bg_color, -1)
+                    cv2.rectangle(display, (bx, badge_y), (bx + badge_w, badge_y + badge_h), (255, 255, 255), 1)
+
+                    cv2.putText(display, title_label, (bx + 4, badge_y + th1 + 6), cv2.FONT_HERSHEY_DUPLEX, 0.85, (255, 255, 255), 2)
+                    cv2.putText(display, sub_label, (bx + 8, badge_y + th1 + th2 + 14), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 220), 1)
+                else:
+                    color = (0, 165, 255) # Warning Amber
+                    cv2.rectangle(display, (bx, by), (bx + bw, by + bh), color, 2)
+                    label = f" FACE DETECTED ({int(c_score)}%) "
+                    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+                    badge_y = max(0, by - th - 12)
+                    cv2.rectangle(display, (bx, badge_y), (bx + tw + 10, by), color, -1)
+                    cv2.putText(display, label, (bx + 4, by - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 2)
+
+            if w != target_w or h != target_h:
+                display = cv2.resize(display, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+
+            _, buf = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            with self.jpeg_lock:
+                self.latest_jpeg = buf.tobytes()
+                self.jpeg_id += 1
+
+            time.sleep(0.025)
+
+    def get_latest_jpeg(self):
+        with self.jpeg_lock:
+            return self.jpeg_id, self.latest_jpeg
+
+    def get_latency_ms(self):
+        if self.latest_frame_time == 0:
+            return 0.0
+        return max(0.0, (time.time() - self.latest_frame_time) * 1000)
+
+    def start(self):
+        self.is_running = True
+        t_cap = threading.Thread(target=self._capture_loop, daemon=True)
+        t_cap.start()
+
+        t_ai = threading.Thread(target=self._ai_loop, daemon=True)
+        t_ai.start()
+
+        t_ren = threading.Thread(target=self._render_loop, daemon=True)
+        t_ren.start()
+
+    def stop(self):
+        self.is_running = False
+
+class CameraManager:
+    """Manages multi-gate cameras dynamically loaded from database."""
+    def __init__(self):
+        self.workers = {} # { camera_id: LowLatencyCameraWorker }
+        self.lock = threading.Lock()
+        self.shared_enrolled_users = []
+        self.users_lock = threading.Lock()
+
+    def sync_users(self):
+        try:
+            resp = requests.get(f"{PHP_API_URL}/users.php", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                users = data.get("data", []) if isinstance(data, dict) else data
+                loaded = []
+                for u in users:
+                    raw_emb = u.get("face_embedding")
+                    if raw_emb:
+                        try:
+                            emb = json.loads(raw_emb) if isinstance(raw_emb, str) else raw_emb
+                            loaded.append({
+                                "id": u["id"],
+                                "user_code": u["user_code"],
+                                "full_name": u["full_name"],
+                                "department": u.get("department", ""),
+                                "profile_photo": u.get("profile_photo"),
+                                "embedding": emb
+                            })
+                        except Exception:
+                            pass
+                with self.users_lock:
+                    self.shared_enrolled_users = loaded
+
+                with self.lock:
+                    for w in self.workers.values():
+                        w.set_enrolled_users(loaded)
+                print(f"[CameraManager] Enrolled users synchronized: {len(loaded)}")
+        except Exception as e:
+            print(f"[CameraManager] User sync note: {e}")
+
+    def sync_cameras(self):
+        try:
+            resp = requests.get(f"{PHP_API_URL}/cameras.php", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                cams = data.get("data", []) if isinstance(data, dict) else data
+                current_ids = set()
+
+                with self.lock:
+                    for c in cams:
+                        cid = c["id"]
+                        current_ids.add(cid)
+                        rtsp = c.get("rtsp_url") or f"rtsp://admin:admin123@{c.get('ip_address')}:554/live/ch0"
+                        role = c.get("camera_role", "IN")
+                        gate = c.get("gate_name", "Main Gate")
+                        name = c.get("camera_name", f"Camera {cid}")
+                        ip = c.get("ip_address", "")
+
+                        if cid in self.workers:
+                            w = self.workers[cid]
+                            if w.rtsp_url != rtsp or w.role != role.upper() or w.ip != ip or w.gate != gate:
+                                print(f"[CameraManager] Updating Camera {cid} -> Role: {role}, IP: {ip}")
+                                w.stop()
+                                new_w = LowLatencyCameraWorker(cid, rtsp, role, gate, name, ip)
+                                new_w.set_enrolled_users(self.shared_enrolled_users)
+                                new_w.start()
+                                self.workers[cid] = new_w
+                        else:
+                            print(f"[CameraManager] Initializing Camera {cid} -> Role: {role}, IP: {ip}")
+                            new_w = LowLatencyCameraWorker(cid, rtsp, role, gate, name, ip)
+                            new_w.set_enrolled_users(self.shared_enrolled_users)
+                            new_w.start()
+                            self.workers[cid] = new_w
+
+                    for cid in list(self.workers.keys()):
+                        if cid not in current_ids:
+                            print(f"[CameraManager] Removing inactive Camera {cid}")
+                            self.workers[cid].stop()
+                            del self.workers[cid]
+        except Exception as e:
+            print(f"[CameraManager] Camera sync error: {e}")
+
+    def get_worker(self, camera_id=None, role=None):
         with self.lock:
-            frame = self.latest_display_frame
+            if camera_id is not None:
+                try:
+                    cid = int(camera_id)
+                    if cid in self.workers:
+                        return self.workers[cid]
+                except (ValueError, TypeError):
+                    pass
+            if role is not None:
+                r_upper = str(role).upper()
+                for w in self.workers.values():
+                    if w.role == r_upper:
+                        return w
+            # Return first available or None
+            if self.workers:
+                return next(iter(self.workers.values()))
+            return None
 
-        if frame is None:
-            blank = np.zeros((450, target_width, 3), dtype=np.uint8)
-            cv2.putText(blank, "Connecting to UNV Camera 192.168.100.113...", (40, 225), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            _, buf = cv2.imencode('.jpg', blank)
-            return buf.tobytes()
+    def get_all_workers(self):
+        with self.lock:
+            return list(self.workers.values())
 
-        h, w = frame.shape[:2]
-        if w != target_width:
-            target_height = int(h * (target_width / w))
-            frame = cv2.resize(frame, (target_width, target_height))
+    def start_background_sync(self):
+        self.sync_users()
+        self.sync_cameras()
 
-        # Quality 72 ensures instant <3ms network transit to browser
-        _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 72])
-        return buf.tobytes()
+        def _sync_loop():
+            while True:
+                time.sleep(10)
+                self.sync_cameras()
+                self.sync_users()
 
-active_worker = LowLatencyCameraWorker(
-    camera_id=1,
-    rtsp_url="rtsp://admin:admin%40123@192.168.100.113:554/cam/realmonitor?channel=1&subtype=0",
-    role="IN",
-    gate="Main Gate"
-)
+        t = threading.Thread(target=_sync_loop, daemon=True)
+        t.start()
 
-# Dedicated thread-safe face engine for HTTP requests (isolated from real-time stream)
+manager = CameraManager()
+
+# Dedicated thread-safe face engine for photo enrollments via HTTP
 http_face_engine = OfflineFaceEngine(score_threshold=0.50)
 http_extract_lock = threading.Lock()
 
@@ -312,6 +482,13 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 class StreamHandler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        try:
+            self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
+
     def _set_cors(self, status=200, content_type='application/json'):
         self.send_response(status)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -326,51 +503,117 @@ class StreamHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        query = urllib.parse.parse_qs(parsed.query)
 
         if path == '/status':
             self._set_cors(200)
+            workers = manager.get_all_workers()
+            cam_list = []
+            max_fps = 0
+            best_lat = 0.0
+
+            for w in workers:
+                lat = round(w.get_latency_ms(), 1)
+                cam_list.append({
+                    'id': w.camera_id,
+                    'name': w.camera_name,
+                    'ip': w.ip,
+                    'role': w.role,
+                    'connected': w.is_connected,
+                    'fps': w.fps,
+                    'latency_ms': lat
+                })
+                if w.fps > max_fps:
+                    max_fps = w.fps
+                if w.is_connected and (best_lat == 0.0 or lat < best_lat):
+                    best_lat = lat
+
+            active_c = manager.get_worker()
             status_data = {
-                'status': 'Online' if active_worker.is_connected else 'Connecting',
-                'camera_ip': '192.168.100.113',
+                'status': 'Online' if any(w.is_connected for w in workers) else 'Connecting',
+                'camera_ip': active_c.ip if active_c else '192.168.100.113',
                 'camera_brand': 'UNV (Uniview)',
-                'fps': active_worker.fps,
-                'total_frames': active_worker.frame_count,
-                'enrolled_faces': len(active_worker.enrolled_users),
-                'offline_ai': 'YuNet Fast (640x360) + SFace (128-D)'
+                'fps': max_fps or 25,
+                'latency_ms': best_lat or 25.0,
+                'enrolled_faces': len(manager.shared_enrolled_users),
+                'cameras': cam_list,
+                'offline_ai': 'YuNet Zero-Lag Multi-Gate AI + SFace (128-D)'
             }
             self.wfile.write(json.dumps(status_data).encode('utf-8'))
 
         elif path.startswith('/video_feed'):
+            # Parse requested camera ID or role
+            # Path can be /video_feed/1, /video_feed/2, or /video_feed?role=OUT
+            target_worker = None
+            parts = path.strip('/').split('/')
+            if len(parts) >= 2 and parts[1].isdigit():
+                target_worker = manager.get_worker(camera_id=int(parts[1]))
+            elif 'role' in query:
+                target_worker = manager.get_worker(role=query['role'][0])
+            elif 'camera_id' in query:
+                target_worker = manager.get_worker(camera_id=query['camera_id'][0])
+            else:
+                target_worker = manager.get_worker()
+
             self.send_response(200)
             self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
             self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
+            self.send_header('Connection', 'close')
             self.end_headers()
 
+            last_id = -1
             while True:
                 try:
-                    jpg_bytes = active_worker.get_jpeg_frame(target_width=800)
-                    self.wfile.write(b'--frame\r\n')
-                    self.wfile.write(b'Content-Type: image/jpeg\r\n\r\n' + jpg_bytes + b'\r\n')
-                    time.sleep(0.033) # 30 FPS smooth real-time stream
-                except (BrokenPipeError, ConnectionResetError):
+                    if target_worker is not None:
+                        jid, jpg_bytes = target_worker.get_latest_jpeg()
+                    else:
+                        jid = 0
+                        jpg_bytes = None
+
+                    if jid != last_id and jpg_bytes is not None:
+                        self.wfile.write(
+                            b'--frame\r\n'
+                            b'Content-Type: image/jpeg\r\n'
+                            b'Content-Length: ' + str(len(jpg_bytes)).encode('ascii') + b'\r\n\r\n' +
+                            jpg_bytes + b'\r\n'
+                        )
+                        self.wfile.flush()
+                        last_id = jid
+                    time.sleep(0.015)
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     break
                 except Exception:
                     break
 
         elif path.startswith('/snapshot'):
-            jpg_bytes = active_worker.get_jpeg_frame(target_width=960)
-            self._set_cors(200, content_type='image/jpeg')
-            self.wfile.write(jpg_bytes)
+            target_worker = manager.get_worker()
+            parts = path.strip('/').split('/')
+            if len(parts) >= 2 and parts[1].isdigit():
+                target_worker = manager.get_worker(camera_id=int(parts[1]))
 
-        elif path == '/reload_users':
-            active_worker.sync_enrolled_users()
+            jpg_bytes = b''
+            if target_worker:
+                _, jpg_bytes = target_worker.get_latest_jpeg()
+            self._set_cors(200, content_type='image/jpeg')
+            self.wfile.write(jpg_bytes if jpg_bytes else b'')
+
+        elif path == '/reload_cameras':
+            manager.sync_cameras()
             self._set_cors(200)
             self.wfile.write(json.dumps({
                 'success': True,
-                'enrolled_faces': len(active_worker.enrolled_users),
-                'users': [u['full_name'] for u in active_worker.enrolled_users]
+                'active_cameras': len(manager.workers)
+            }).encode('utf-8'))
+
+        elif path == '/reload_users':
+            manager.sync_users()
+            self._set_cors(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'enrolled_faces': len(manager.shared_enrolled_users),
+                'users': [u['full_name'] for u in manager.shared_enrolled_users]
             }).encode('utf-8'))
 
         else:
@@ -386,7 +629,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 image_b64 = data.get('image', '')
                 with http_extract_lock:
                     emb, bbox, conf = http_face_engine.extract_from_base64(image_b64)
-                
+
                 self._set_cors(200)
                 if emb:
                     self.wfile.write(json.dumps({
@@ -411,17 +654,12 @@ class StreamHandler(BaseHTTPRequestHandler):
         return
 
 def run_server():
+    # Start dynamic multi-camera manager
+    manager.start_background_sync()
+
     server = ThreadedHTTPServer(('0.0.0.0', ENGINE_PORT), StreamHandler)
-    print(f"[Engine] Real-Time Zero-Lag Stream Server on http://127.0.0.1:{ENGINE_PORT}")
+    print(f"[Engine] Multi-Gate Camera & AI Engine on http://127.0.0.1:{ENGINE_PORT}")
     server.serve_forever()
 
 if __name__ == '__main__':
-    # Start HTTP server thread
-    s_thread = threading.Thread(target=run_server, daemon=True)
-    s_thread.start()
-
-    # Start Worker loop
-    try:
-        active_worker.run_stream_loop()
-    except KeyboardInterrupt:
-        print("Stopping camera worker...")
+    run_server()

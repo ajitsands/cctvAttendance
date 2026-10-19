@@ -116,6 +116,9 @@ export default function CamerasView({ onCamerasChanged }) {
       await api.saveCamera(cameraForm);
       setCameraModalOpen(false);
       fetchData();
+      try {
+        await fetch('http://127.0.0.1:8001/reload_cameras');
+      } catch (err) {}
       if (onCamerasChanged) onCamerasChanged();
     } catch (err) {
       alert('Error saving camera: ' + err.message);
@@ -414,7 +417,7 @@ export default function CamerasView({ onCamerasChanged }) {
                     onChange={e => setCameraForm({ ...cameraForm, rtsp_url: e.target.value })}
                   />
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Include credentials if RTSP authentication is enabled on the camera.
+                    Supported Brands: <strong>UNV (Recommended)</strong> / <strong>Dahua</strong> / <strong>CP Plus</strong> (Port 554 RTSP). Include credentials if authentication is required.
                   </span>
                 </div>
 

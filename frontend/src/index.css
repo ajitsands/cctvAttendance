@@ -447,6 +447,18 @@ body {
 .badge-out { background: #fee2e2; color: #b91c1c; }
 
 /* Grid Systems */
+.grid-cols-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+@media (max-width: 1400px) {
+  .grid-cols-5 {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+}
+
 .grid-cols-4 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
