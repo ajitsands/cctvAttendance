@@ -138,17 +138,24 @@ if ($method === 'POST') {
 
         $snapshotPath = null;
         if (!empty($snapshot)) {
-            $uploadDir = __DIR__ . '/../../uploads/breaches';
-            if (!is_dir($uploadDir)) {
-                @mkdir($uploadDir, 0777, true);
+            $backendUploadDir = __DIR__ . '/../uploads/breaches';
+            $frontendUploadDir = __DIR__ . '/../../frontend/public/uploads/breaches';
+            $rootUploadDir = __DIR__ . '/../../uploads/breaches';
+
+            foreach ([$backendUploadDir, $frontendUploadDir, $rootUploadDir] as $dir) {
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0777, true);
+                }
             }
+
             $filename = 'breach_' . $personId . '_' . time() . '.jpg';
-            $filePath = $uploadDir . '/' . $filename;
             if (preg_match('/^data:image\/(\w+);base64,/', $snapshot, $type)) {
                 $data = substr($snapshot, strpos($snapshot, ',') + 1);
                 $decoded = base64_decode($data);
                 if ($decoded) {
-                    file_put_contents($filePath, $decoded);
+                    file_put_contents($backendUploadDir . '/' . $filename, $decoded);
+                    @file_put_contents($frontendUploadDir . '/' . $filename, $decoded);
+                    @file_put_contents($rootUploadDir . '/' . $filename, $decoded);
                     $snapshotPath = '/uploads/breaches/' . $filename;
                 }
             }

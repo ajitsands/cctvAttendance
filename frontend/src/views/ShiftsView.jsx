@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { CalendarClock, Plus, Edit2, Trash2, X, Clock, Check } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import { useDialog } from '../context/DialogContext';
 
 export default function ShiftsView({ onShiftsChanged }) {
+  const { confirm, toast } = useDialog();
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -87,20 +89,29 @@ export default function ShiftsView({ onShiftsChanged }) {
       setModalOpen(false);
       fetchShifts();
       if (onShiftsChanged) onShiftsChanged();
+      toast.success(editingShift ? 'Shift updated successfully.' : 'New shift schedule created.');
     } catch (err) {
-      alert('Error saving shift: ' + err.message);
+      toast.error('Error saving shift: ' + err.message);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Delete this shift schedule?')) {
-      try {
-        await api.deleteShift(id);
-        fetchShifts();
-        if (onShiftsChanged) onShiftsChanged();
-      } catch (err) {
-        alert(err.message);
-      }
+  const handleDelete = async (id, name = 'this shift schedule') => {
+    const isConfirmed = await confirm({
+      title: 'Delete Shift Schedule',
+      message: `Are you sure you want to delete ${name}? Assigned staff may need a replacement shift schedule.`,
+      confirmText: 'Delete Shift',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.deleteShift(id);
+      toast.success('Shift schedule deleted.');
+      fetchShifts();
+      if (onShiftsChanged) onShiftsChanged();
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 

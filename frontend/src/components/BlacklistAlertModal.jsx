@@ -49,18 +49,24 @@ export default function BlacklistAlertModal({ alert, onClose, onViewBreaches }) 
 
   if (!alert) return null;
 
-  const threatColor = alert.threat_level === 'Critical' ? '#ef4444' : '#f59e0b';
+  const resolvePhotoUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http') || url.startsWith('data:')) return url;
+    return `http://127.0.0.1:8000${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
+  const threatColor = alert.threat_level === 'Critical' ? '#ef4444' : (alert.threat_level === 'High' ? '#f97316' : '#eab308');
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)' }}>
       <div 
         className="modal-content" 
         style={{ 
-          maxWidth: '560px', 
+          maxWidth: '580px', 
           width: '100%', 
           borderRadius: 'var(--radius-lg)', 
           border: '2px solid #ef4444', 
-          boxShadow: '0 0 50px rgba(239, 68, 68, 0.5), 0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 0 50px rgba(239, 68, 68, 0.6), 0 20px 25px -5px rgba(0, 0, 0, 0.5)',
           overflow: 'hidden',
           animation: 'pulse-border 1.5s infinite'
         }}
@@ -83,14 +89,14 @@ export default function BlacklistAlertModal({ alert, onClose, onViewBreaches }) 
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <ShieldAlert size={28} color="#ffffff" />
+              <ShieldAlert size={30} color="#ffffff" />
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.9 }}>
-                CRITICAL FACILITY SECURITY ALERT
+              <div style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#fecaca' }}>
+                SECURITY BREACH WARNING
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                Blacklisted Individual Spotted!
+              <h3 style={{ fontSize: '1.4rem', fontWeight: 900, margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.4)', letterSpacing: '-0.01em' }}>
+                UNAUTHORIZED ACCESS DETECTED!
               </h3>
             </div>
           </div>
@@ -119,11 +125,11 @@ export default function BlacklistAlertModal({ alert, onClose, onViewBreaches }) 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>
-                Registered Blacklist Photo
+                Blacklisted Face Profile
               </div>
-              <div style={{ width: '100%', height: '150px', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '2px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '100%', height: '160px', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '2px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {alert.reference_photo ? (
-                  <img src={alert.reference_photo} alt={alert.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={resolvePhotoUrl(alert.reference_photo)} alt={alert.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; }} />
                 ) : (
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No Photo Available</div>
                 )}
@@ -134,9 +140,9 @@ export default function BlacklistAlertModal({ alert, onClose, onViewBreaches }) 
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', marginBottom: '0.4rem', textTransform: 'uppercase' }}>
                 Live CCTV Camera Capture
               </div>
-              <div style={{ width: '100%', height: '150px', background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '2px solid #ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '100%', height: '160px', background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '2px solid #ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {alert.snapshot_path ? (
-                  <img src={alert.snapshot_path} alt="CCTV Snapshot" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={resolvePhotoUrl(alert.snapshot_path)} alt="CCTV Snapshot" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; }} />
                 ) : (
                   <div style={{ color: '#ffffff', fontSize: '0.85rem' }}>Live Crop Captured</div>
                 )}

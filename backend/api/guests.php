@@ -14,6 +14,11 @@ function notifyFaceEngineReloadGuests() {
     @file_get_contents('http://127.0.0.1:8001/reload_guests', false, $ctx);
 }
 
+function notifyFaceEngineReloadBlacklist() {
+    $ctx = stream_context_create(['http' => ['timeout' => 0.8, 'ignore_errors' => true]]);
+    @file_get_contents('http://127.0.0.1:8001/reload_blacklist', false, $ctx);
+}
+
 if ($method === 'GET') {
     // Action: Sync embeddings for Python AI Engine
     if (($_GET['action'] ?? '') === 'sync_embeddings') {
@@ -155,19 +160,40 @@ if ($method === 'POST') {
         // Save snapshot if provided
         $snapshotPath = null;
         if (!empty($snapshot)) {
-            $uploadDir = __DIR__ . '/../../uploads/guests';
-            if (!is_dir($uploadDir)) {
-                @mkdir($uploadDir, 0777, true);
+            $backendUploadDir = __DIR__ . '/../uploads/guests';
+            $frontendUploadDir = __DIR__ . '/../../frontend/public/uploads/guests';
+            $rootUploadDir = __DIR__ . '/../../uploads/guests';
+
+            foreach ([$backendUploadDir, $frontendUploadDir, $rootUploadDir] as $dir) {
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0777, true);
+                }
             }
+
             $filename = 'guest_' . time() . '_' . rand(100, 999) . '.jpg';
-            $filePath = $uploadDir . '/' . $filename;
-            if (preg_match('/^data:image\/(\w+);base64,/', $snapshot, $type)) {
+            $decoded = false;
+            if (strpos($snapshot, ',') !== false) {
                 $data = substr($snapshot, strpos($snapshot, ',') + 1);
                 $decoded = base64_decode($data);
-                if ($decoded) {
-                    file_put_contents($filePath, $decoded);
-                    $snapshotPath = '/uploads/guests/' . $filename;
-                }
+            } else {
+                $decoded = base64_decode($snapshot);
+            }
+
+            if ($decoded) {
+                @file_put_contents($backendUploadDir . '/' . $filename, $decoded);
+                @file_put_contents($frontendUploadDir . '/' . $filename, $decoded);
+                @file_put_contents($rootUploadDir . '/' . $filename, $decoded);
+                $snapshotPath = '/uploads/guests/' . $filename;
+            }
+        }
+
+        // Validate camera ID exists to avoid foreign key failures
+        $validCameraId = null;
+        if (!empty($cameraId) && $cameraId > 0) {
+            $chkCam = $db->prepare("SELECT id FROM cameras WHERE id = ?");
+            $chkCam->execute([$cameraId]);
+            if ($chkCam->fetchColumn()) {
+                $validCameraId = $cameraId;
             }
         }
 
@@ -236,7 +262,7 @@ if ($method === 'POST') {
                     VALUES (:gid, :cid, :dir, :gate, :time, :date, :dur, :conf, :snap)
                 ")->execute([
                     ':gid' => $guestId,
-                    ':cid' => $cameraId,
+                    ':cid' => $validCameraId,
                     ':dir' => $direction,
                     ':gate' => $gateName,
                     ':time' => $now,
@@ -256,22 +282,35 @@ if ($method === 'POST') {
             }
         }
 
-        // 2. Brand new guest auto-enrollment
-        $lastId = (int)$db->query("SELECT MAX(id) FROM guests")->fetchColumn();
-        $guestCode = 'GST-' . date('Ymd') . '-' . str_pad($lastId + 1, 3, '0', STR_PAD_LEFT);
+        // 2. Brand new guest auto-enrollment with V###### name format
+        // Check uniqueness of 6-digit random number
+        $attempts = 0;
+        do {
+            $rand6 = (string)rand(100000, 999999);
+            $vCode = 'V' . $rand6;
+            $chk = $db->prepare("SELECT id FROM guests WHERE guest_code = ? OR guest_name = ?");
+            $chk->execute([$vCode, $vCode]);
+            $exists = $chk->fetch();
+            $attempts++;
+        } while ($exists && $attempts < 10);
+
+        $guestCode = $vCode;
+        $guestName = $vCode; // Named as V###### initially, Admin can rename later if needed
         $embJson = is_string($embedding) ? $embedding : json_encode($embedding);
 
         $db->prepare("
             INSERT INTO guests 
             (guest_code, guest_name, guest_type, first_photo, latest_photo, face_embedding, total_visits, total_inside_minutes, current_status, first_seen_at, last_seen_at)
-            VALUES (:code, 'Guest / Visitor', 'Visitor', :p1, :p2, :emb, 1, 0, :status, :seen, :seen)
+            VALUES (:code, :name, 'Visitor', :p1, :p2, :emb, 1, 0, :status, :seen1, :seen2)
         ")->execute([
             ':code' => $guestCode,
+            ':name' => $guestName,
             ':p1' => $snapshotPath,
             ':p2' => $snapshotPath,
             ':emb' => $embJson,
             ':status' => ($direction === 'OUT' ? 'OUTSIDE' : 'INSIDE'),
-            ':seen' => $now
+            ':seen1' => $now,
+            ':seen2' => $now
         ]);
 
         $newGuestId = (int)$db->lastInsertId();
@@ -282,7 +321,7 @@ if ($method === 'POST') {
             VALUES (:gid, :cid, :dir, :gate, :time, :date, 0, :conf, :snap)
         ")->execute([
             ':gid' => $newGuestId,
-            ':cid' => $cameraId,
+            ':cid' => $validCameraId,
             ':dir' => $direction,
             ':gate' => $gateName,
             ':time' => $now,
@@ -297,8 +336,90 @@ if ($method === 'POST') {
             'success' => true,
             'is_new' => true,
             'guest_id' => $newGuestId,
-            'guest_code' => $guestCode
+            'guest_code' => $guestCode,
+            'guest_name' => $guestName,
+            'snapshot_path' => $snapshotPath
         ], 201);
+    }
+
+    // Action: Move visitor/guest to security blacklist
+    if ($action === 'move_to_blacklist') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $guestId = (int)($input['guest_id'] ?? 0);
+        $threatLevel = $input['threat_level'] ?? 'High';
+        $reason = trim($input['reason'] ?? 'Unauthorized access - Moved from Visitor Registry');
+        $notes = trim($input['notes'] ?? 'Auto-flagged from visitor records');
+
+        if ($guestId <= 0) {
+            jsonError('Invalid Visitor ID', 400);
+        }
+
+        $stmt = $db->prepare("SELECT * FROM guests WHERE id = ?");
+        $stmt->execute([$guestId]);
+        $guest = $stmt->fetch();
+        if (!$guest) {
+            jsonError('Visitor record not found', 404);
+        }
+
+        $personCode = 'BLK-' . $guest['guest_code'];
+        $photoToUse = $guest['latest_photo'] ?: $guest['first_photo'];
+        $embToUse = $guest['face_embedding'];
+
+        // Check if already in blacklisted_persons
+        $chkStmt = $db->prepare("SELECT id FROM blacklisted_persons WHERE person_code = ?");
+        $chkStmt->execute([$personCode]);
+        $existingId = $chkStmt->fetchColumn();
+
+        if ($existingId) {
+            $db->prepare("
+                UPDATE blacklisted_persons 
+                SET full_name = :name, threat_level = :threat, reason = :reason, photo_url = COALESCE(:photo, photo_url), face_embedding = COALESCE(:emb, face_embedding), notes = :notes, status = 'Active'
+                WHERE id = :id
+            ")->execute([
+                ':name' => $guest['guest_name'],
+                ':threat' => $threatLevel,
+                ':reason' => $reason,
+                ':photo' => $photoToUse,
+                ':emb' => $embToUse,
+                ':notes' => $notes,
+                ':id' => $existingId
+            ]);
+            $blkId = (int)$existingId;
+        } else {
+            $db->prepare("
+                INSERT INTO blacklisted_persons
+                (person_code, full_name, threat_level, reason, photo_url, face_embedding, notes, status)
+                VALUES (:code, :name, :threat, :reason, :photo, :emb, :notes, 'Active')
+            ")->execute([
+                ':code' => $personCode,
+                ':name' => $guest['guest_name'],
+                ':threat' => $threatLevel,
+                ':reason' => $reason,
+                ':photo' => $photoToUse,
+                ':emb' => $embToUse,
+                ':notes' => $notes
+            ]);
+            $blkId = (int)$db->lastInsertId();
+        }
+
+        // Tag the visitor record
+        $db->prepare("
+            UPDATE guests 
+            SET notes = CONCAT(COALESCE(notes, ''), ' [MOVED TO BLACKLIST ON ', NOW(), ']')
+            WHERE id = ?
+        ")->execute([$guestId]);
+
+        // Trigger immediate sync in the AI engine so camera alerts right away
+        notifyFaceEngineReloadBlacklist();
+        notifyFaceEngineReloadGuests();
+
+        jsonResponse([
+            'success' => true,
+            'blacklisted_person_id' => $blkId,
+            'person_code' => $personCode,
+            'full_name' => $guest['guest_name'],
+            'message' => "Visitor {$guest['guest_name']} ({$personCode}) successfully moved to Security Blacklist."
+        ], 200);
     }
 
     jsonError('Unsupported POST action', 400);

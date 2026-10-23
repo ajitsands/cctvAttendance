@@ -12,12 +12,16 @@ import {
   Upload, 
   AlertCircle,
   ScanFace,
-  Sparkles
+  Sparkles,
+  Crop
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import ImageCropModal from '../components/ImageCropModal';
+import { useDialog } from '../context/DialogContext';
 
 export default function UsersView({ shifts = [], onUsersChanged }) {
+  const { confirm, toast } = useDialog();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -48,6 +52,9 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
   const [faceEnrolledMsg, setFaceEnrolledMsg] = useState(null);
   const [actionToast, setActionToast] = useState(null);
   const [targetRowUser, setTargetRowUser] = useState(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState(null);
+  const [cropTarget, setCropTarget] = useState('modal'); // 'modal' | 'row'
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const modalFileInputRef = useRef(null);
@@ -139,7 +146,7 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
       }
       setWebcamActive(true);
     } catch (err) {
-      alert('Could not access webcam: ' + err.message);
+      toast.error('Could not access webcam: ' + err.message);
     }
   };
 
@@ -151,19 +158,18 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
     setWebcamActive(false);
   };
 
-  const capturePhoto = async () => {
+  const capturePhoto = () => {
     if (!videoRef.current) return;
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 480;
-    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 640;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    const b64 = canvas.toDataURL('image/jpeg');
-    setFormData(prev => ({ ...prev, profile_photo: b64 }));
+    const b64 = canvas.toDataURL('image/jpeg', 0.95);
     stopWebcam();
-
-    // Extract Face Embedding via local offline Python engine
-    extractEmbedding(b64);
+    setCropTarget('modal');
+    setCropImageSrc(b64);
+    setCropModalOpen(true);
   };
 
   // Quick Photo Upload for any person directly from the table
@@ -175,134 +181,79 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
     }
   };
 
-  const handleRowPhotoUpload = async (e) => {
+  const handleRowPhotoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file || !targetRowUser) return;
-
-    setActionToast({ type: 'info', text: `Optimizing and uploading photo for ${targetRowUser.full_name}...` });
 
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const rawB64 = uploadEvent.target.result;
-      const img = new Image();
-      img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 800;
-
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedB64 = canvas.toDataURL('image/jpeg', 0.88);
-
-        // Extract 128-d face embedding via offline AI engine
-        let emb = null;
-        let hasFace = false;
-        try {
-          const embRes = await api.extractFaceEmbedding(compressedB64);
-          if (embRes && embRes.success && embRes.embedding) {
-            emb = embRes.embedding;
-            hasFace = true;
-          }
-        } catch (embErr) {
-          console.warn('Face embedding extraction notice:', embErr);
-        }
-
-        // Save directly to user record
-        try {
-          await api.uploadUserPhoto({
-            user_id: targetRowUser.id,
-            user_code: targetRowUser.user_code,
-            profile_photo: compressedB64,
-            face_embedding: emb
-          });
-
-          fetchUsers();
-          if (onUsersChanged) onUsersChanged();
-          setActionToast({
-            type: 'success',
-            text: hasFace 
-              ? `Photo and 128-D face biometric vector enrolled for ${targetRowUser.full_name}!`
-              : `Profile photo uploaded successfully for ${targetRowUser.full_name}!`
-          });
-        } catch (saveErr) {
-          setActionToast({ type: 'error', text: 'Error uploading photo: ' + saveErr.message });
-        }
-      };
-      img.onerror = () => {
-        setActionToast({ type: 'error', text: 'Could not decode image file. Please use JPG or PNG.' });
-      };
-      img.src = rawB64;
+      setCropTarget('row');
+      setCropImageSrc(rawB64);
+      setCropModalOpen(true);
     };
     reader.readAsDataURL(file);
+    if (rowFileInputRef.current) rowFileInputRef.current.value = '';
   };
 
-  // Modal Photo Upload
+  // Modal Photo Upload -> Opens Cropper
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setFaceExtracting(true);
-    setFaceEnrolledMsg('Optimizing image for facial recognition...');
-
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const rawB64 = uploadEvent.target.result;
-      // Immediately preview the image in the modal
-      setFormData(prev => ({ ...prev, profile_photo: rawB64 }));
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 800; // Optimal HD portrait dimensions for fast AI processing
-
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convert to high-quality compressed JPEG (~60KB to 100KB)
-        const compressedB64 = canvas.toDataURL('image/jpeg', 0.88);
-        setFormData(prev => ({ ...prev, profile_photo: compressedB64 }));
-        
-        // Extract 128-d face embedding via local offline engine
-        extractEmbedding(compressedB64);
-      };
-      img.onerror = () => {
-        setFormData(prev => ({ ...prev, profile_photo: rawB64 }));
-        setFaceExtracting(false);
-        setFaceEnrolledMsg('Photo attached.');
-      };
-      img.src = rawB64;
+      setCropTarget('modal');
+      setCropImageSrc(rawB64);
+      setCropModalOpen(true);
     };
     reader.onloadend = () => {
       if (modalFileInputRef.current) modalFileInputRef.current.value = '';
     };
     reader.readAsDataURL(file);
+  };
+
+  // Handler invoked when ImageCropModal finishes cropping
+  const handleCropComplete = async (croppedB64) => {
+    if (cropTarget === 'modal') {
+      setFormData(prev => ({ ...prev, profile_photo: croppedB64 }));
+      extractEmbedding(croppedB64);
+    } else if (cropTarget === 'row' && targetRowUser) {
+      setActionToast({ type: 'info', text: `Enrolling cropped biometric face for ${targetRowUser.full_name}...` });
+
+      let emb = null;
+      let hasFace = false;
+      try {
+        const embRes = await api.extractFaceEmbedding(croppedB64);
+        if (embRes && embRes.success && embRes.embedding) {
+          emb = embRes.embedding;
+          hasFace = true;
+        }
+      } catch (embErr) {
+        console.warn('Face embedding extraction notice:', embErr);
+      }
+
+      try {
+        await api.uploadUserPhoto({
+          user_id: targetRowUser.id,
+          user_code: targetRowUser.user_code,
+          profile_photo: croppedB64,
+          face_embedding: emb
+        });
+
+        fetchUsers();
+        if (onUsersChanged) onUsersChanged();
+        setActionToast({
+          type: 'success',
+          text: hasFace 
+            ? `Cropped photo and 128-D face biometric vector enrolled for ${targetRowUser.full_name}!`
+            : `Cropped profile photo saved for ${targetRowUser.full_name}!`
+        });
+      } catch (saveErr) {
+        setActionToast({ type: 'error', text: 'Error uploading photo: ' + saveErr.message });
+      }
+    }
   };
 
   const extractEmbedding = async (b64Image) => {
@@ -329,25 +280,34 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
     setSavingUser(true);
     try {
       await api.saveUser(formData);
+      toast.success(formData.id ? 'Person details updated successfully.' : 'New person registered successfully.');
       closeModal();
       fetchUsers();
       if (onUsersChanged) onUsersChanged();
     } catch (err) {
-      alert('Error saving user: ' + (err.message || 'Upload failed'));
+      toast.error('Error saving user: ' + (err.message || 'Upload failed'));
     } finally {
       setSavingUser(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Are you sure you want to deactivate this person?')) {
-      try {
-        await api.deleteUser(id);
-        fetchUsers();
-        if (onUsersChanged) onUsersChanged();
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
+  const handleDelete = async (id, name = 'this person') => {
+    const isConfirmed = await confirm({
+      title: 'Deactivate Staff Member',
+      message: `Are you sure you want to deactivate ${name}? Their gate access and face attendance logging will be suspended.`,
+      confirmText: 'Deactivate Member',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.deleteUser(id);
+      toast.success('Person deactivated successfully.');
+      fetchUsers();
+      if (onUsersChanged) onUsersChanged();
+    } catch (err) {
+      toast.error('Error: ' + err.message);
     }
   };
 
@@ -575,7 +535,7 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
                 <button 
                   className="btn btn-secondary" 
                   style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem', color: '#ef4444' }}
-                  onClick={() => handleDelete(u.id)}
+                  onClick={() => handleDelete(u.id, u.full_name)}
                   title="Deactivate"
                 >
                   <Trash2 size={13} />
@@ -798,6 +758,20 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
                               <button 
                                 type="button" 
                                 className="btn btn-secondary" 
+                                onClick={() => {
+                                  setCropImageSrc(formData.profile_photo);
+                                  setCropTarget('modal');
+                                  setCropModalOpen(true);
+                                }}
+                                title="Adjust crop and alignment"
+                              >
+                                <Crop size={15} /> Crop / Frame
+                              </button>
+                            )}
+                            {formData.profile_photo && (
+                              <button 
+                                type="button" 
+                                className="btn btn-secondary" 
                                 style={{ color: '#ef4444' }}
                                 onClick={() => {
                                   setFormData(prev => ({ ...prev, profile_photo: '', face_embedding: null }));
@@ -850,6 +824,16 @@ export default function UsersView({ shifts = [], onUsersChanged }) {
           </div>
         </div>
       )}
+
+      {/* Reusable Image Crop Modal for Personnel Portraits */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => setCropModalOpen(false)}
+        onCropComplete={handleCropComplete}
+        title={cropTarget === 'row' && targetRowUser ? `Crop Face for ${targetRowUser.full_name}` : 'Crop & Frame Personnel Portrait'}
+        cropShape="round"
+      />
     </div>
   );
 }

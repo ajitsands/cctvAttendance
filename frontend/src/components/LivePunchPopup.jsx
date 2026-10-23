@@ -97,9 +97,12 @@ export default function LivePunchPopup({ punch, onClose, duration = 6000 }) {
         >
           {punch.profile_photo ? (
             <img 
-              src={punch.profile_photo} 
+              src={punch.profile_photo.startsWith('http') || punch.profile_photo.startsWith('data:')
+                ? punch.profile_photo 
+                : `http://127.0.0.1:8000${punch.profile_photo.startsWith('/') ? '' : '/'}${punch.profile_photo}`} 
               alt={punch.full_name} 
               className="live-punch-popup-avatar-img" 
+              onError={(e) => { e.target.style.display = 'none'; }}
             />
           ) : (
             <div 

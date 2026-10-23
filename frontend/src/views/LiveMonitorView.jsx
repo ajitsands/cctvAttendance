@@ -30,6 +30,7 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
   const [streamErrorOut, setStreamErrorOut] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
   const [engineStatus, setEngineStatus] = useState(null);
+  const [previewPunch, setPreviewPunch] = useState(null); // { punch, photoSrc }
 
   // Initialize defaults
   useEffect(() => {
@@ -382,81 +383,109 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Auto-refreshes every 3s</span>
           </div>
 
-          {livePunches.length === 0 ? (
+          {livePunches.filter(p => !p.person_type || p.person_type === 'EMPLOYEE').length === 0 ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <p>No punches recorded yet today. Stand in front of the camera or use the simulator on the right.</p>
+              <p>No employee attendance punches recorded yet today. Stand in front of the camera or use the simulator on the right.</p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {livePunches.map((punch) => {
-                const isEntry = punch.direction === 'IN';
-                return (
-                  <div 
-                    key={punch.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.85rem 1.15rem',
-                      background: 'var(--bg-muted)',
-                      borderRadius: 'var(--radius-md)',
-                      borderLeft: `4px solid ${isEntry ? '#10b981' : '#ec4899'}`,
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{
-                        width: '44px',
-                        height: '44px',
-                        borderRadius: '50%',
-                        background: isEntry ? '#dcfce7' : '#fce7f3',
-                        color: isEntry ? '#15803d' : '#be185d',
+              {livePunches
+                .filter(punch => !punch.person_type || punch.person_type === 'EMPLOYEE')
+                .map((punch) => {
+                  const isEntry = punch.direction === 'IN';
+                  const photoSrc = punch.profile_photo 
+                    ? (punch.profile_photo.startsWith('http') || punch.profile_photo.startsWith('data:') 
+                        ? punch.profile_photo 
+                        : `http://127.0.0.1:8000${punch.profile_photo.startsWith('/') ? '' : '/'}${punch.profile_photo}`)
+                    : null;
+
+                  return (
+                    <div 
+                      key={`EMP-${punch.id}-${punch.punch_time}`}
+                      style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                        fontSize: '1rem',
-                        overflow: 'hidden',
-                        border: '2px solid rgba(0,0,0,0.06)'
-                      }}>
-                        {punch.profile_photo ? (
-                          <img src={punch.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          punch.full_name?.charAt(0) || 'U'
-                        )}
+                        justifyContent: 'space-between',
+                        padding: '0.85rem 1.15rem',
+                        background: 'var(--bg-muted)',
+                        borderRadius: 'var(--radius-md)',
+                        borderLeft: `4px solid ${isEntry ? '#10b981' : '#ec4899'}`,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div 
+                          onClick={() => setPreviewPunch({ punch, photoSrc })}
+                          title="Click to view full photo & employee details"
+                          style={{
+                            width: '46px',
+                            height: '46px',
+                            borderRadius: '50%',
+                            background: isEntry ? '#dcfce7' : '#fce7f3',
+                            color: isEntry ? '#15803d' : '#be185d',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '1rem',
+                            overflow: 'hidden',
+                            border: `2px solid ${isEntry ? '#10b981' : '#ec4899'}`,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                            transition: 'transform 0.15s, box-shadow 0.15s'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.12)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                          {photoSrc ? (
+                            <img 
+                              src={photoSrc} 
+                              alt={punch.full_name} 
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            punch.full_name?.charAt(0) || 'U'
+                          )}
+                        </div>
+
+                        <div>
+                          <div 
+                            onClick={() => setPreviewPunch({ punch, photoSrc })}
+                            title="Click to view full photo & employee details"
+                            style={{ fontWeight: 700, fontSize: '0.94rem', color: 'var(--text-main)', cursor: 'pointer' }}
+                          >
+                            <span>{punch.full_name}</span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: '0.6rem', marginTop: '2px' }}>
+                            <span>ID: {punch.user_code}</span>
+                            <span>•</span>
+                            <span>{punch.department || 'Staff'}</span>
+                            <span>•</span>
+                            <span>{punch.camera_name || 'CCTV Gate'}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.94rem', color: 'var(--text-main)' }}>
-                          {punch.full_name}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: '0.6rem' }}>
-                          <span>ID: {punch.user_code}</span>
-                          <span>•</span>
-                          <span>{punch.department || 'Staff'}</span>
-                          <span>•</span>
-                          <span>{punch.camera_name || 'CCTV Gate'}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                        <span className={`badge ${isEntry ? 'badge-in' : 'badge-out'}`}>
+                          {isEntry ? <LogIn size={12} /> : <LogOut size={12} />}
+                          {punch.direction}
+                        </span>
+
+                        <div style={{ textAlign: 'right', minWidth: '75px' }}>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                            {punch.punch_time ? punch.punch_time.slice(11, 19) : '--:--:--'}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
+                            Conf: {parseFloat(punch.confidence_score || 95).toFixed(2)}%
+                          </div>
                         </div>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                      <span className={`badge ${isEntry ? 'badge-in' : 'badge-out'}`}>
-                        {isEntry ? <LogIn size={12} /> : <LogOut size={12} />}
-                        {punch.direction}
-                      </span>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem' }}>
-                          {punch.punch_time?.split(' ')[1] || punch.punch_time}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
-                          Conf: {punch.confidence_score ? `${punch.confidence_score}%` : '96.8%'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>
@@ -559,6 +588,195 @@ export default function LiveMonitorView({ users = [], cameras = [], onPunchLogge
           </div>
         </div>
       </div>
+
+      {/* Lightbox Modal: Enlarged Image & Identification Details */}
+      {previewPunch && (
+        <div 
+          onClick={() => setPreviewPunch(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: `2px solid ${previewPunch.punch.person_type === 'GUEST' ? '#f59e0b' : (previewPunch.punch.direction === 'IN' ? '#10b981' : '#ec4899')}`,
+              borderRadius: '20px',
+              width: '100%',
+              maxWidth: '640px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px',
+              background: previewPunch.punch.person_type === 'GUEST'
+                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.2) 100%)'
+                : (previewPunch.punch.direction === 'IN'
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%)'
+                    : 'linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(219, 39, 119, 0.2) 100%)'),
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="live-dot" style={{ background: previewPunch.punch.direction === 'IN' ? '#10b981' : '#ec4899' }}></span>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    CCTV REAL-TIME IDENTIFICATION
+                  </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                    {previewPunch.punch.person_type === 'GUEST' ? 'Visitor Detection Portrait' : 'Staff Face Biometrics'}
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPreviewPunch(null)}
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Eye size={16} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '20px', alignItems: 'center' }}>
+                {/* Photo */}
+                <div style={{
+                  width: '100%',
+                  height: '240px',
+                  borderRadius: '14px',
+                  overflow: 'hidden',
+                  background: '#0f172a',
+                  border: '2px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative'
+                }}>
+                  {previewPunch.photoSrc ? (
+                    <img 
+                      src={previewPunch.photoSrc} 
+                      alt={previewPunch.punch.full_name} 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                  ) : (
+                    <div style={{ fontSize: '3rem', fontWeight: 800, color: '#94a3b8' }}>
+                      {previewPunch.punch.full_name?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    padding: '6px',
+                    background: 'rgba(0,0,0,0.75)',
+                    color: '#ffffff',
+                    fontSize: '0.7rem',
+                    textAlign: 'center',
+                    fontWeight: 600
+                  }}>
+                    Live Snapshot Capture
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div>
+                  <h3 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '0 0 6px 0', color: 'var(--text-main)' }}>
+                    {previewPunch.punch.full_name}
+                  </h3>
+
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                    <span className={`badge ${previewPunch.punch.direction === 'IN' ? 'badge-in' : 'badge-out'}`}>
+                      {previewPunch.punch.direction === 'IN' ? 'PUNCH IN (ENTRY)' : 'PUNCH OUT (EXIT)'}
+                    </span>
+
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '3px 8px',
+                      borderRadius: '8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      background: previewPunch.punch.person_type === 'GUEST' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+                      color: previewPunch.punch.person_type === 'GUEST' ? '#d97706' : '#2563eb'
+                    }}>
+                      {previewPunch.punch.department || (previewPunch.punch.person_type === 'GUEST' ? 'Visitor' : 'Staff')}
+                    </span>
+                  </div>
+
+                  <div style={{
+                    background: 'var(--bg-muted)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '0.82rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Identifier / Code:</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>{previewPunch.punch.user_code}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Camera & Gate:</span>
+                      <strong>{previewPunch.punch.camera_name || 'Main Gate'}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Event Timestamp:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>{previewPunch.punch.punch_time}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>AI Confidence:</span>
+                      <span style={{ color: '#10b981', fontWeight: 700 }}>{parseFloat(previewPunch.punch.confidence_score || 95).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setPreviewPunch(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -128,7 +128,7 @@ class LowLatencyCameraWorker:
         pid = person["id"]
         now = time.time()
         if pid in self.last_blacklist_alert_time:
-            if now - self.last_blacklist_alert_time[pid] < 30: # 30s cooldown
+            if now - self.last_blacklist_alert_time[pid] < 15: # 15s cooldown
                 return
         self.last_blacklist_alert_time[pid] = now
         print(f"[SECURITY ALERT] 🚨 BLACKLIST DETECTED: {person['full_name']} ({person.get('person_code')}) - Threat: {person.get('threat_level')} at {self.gate} ({self.role})!")
@@ -145,10 +145,10 @@ class LowLatencyCameraWorker:
                 _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 b64_snap = base64.b64encode(buffer).decode('utf-8')
                 payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
-            except Exception:
-                pass
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Blacklist snapshot encode error: {ex}")
         try:
-            requests.post(f"{PHP_API_URL}/blacklist.php?action=log_breach", json=payload, timeout=2)
+            requests.post(f"{PHP_API_URL}/blacklist.php?action=log_breach", json=payload, timeout=6)
         except Exception as e:
             print(f"[Camera {self.camera_id}] Blacklist breach alert note: {e}")
 
@@ -156,7 +156,7 @@ class LowLatencyCameraWorker:
         gid = guest["id"]
         now = time.time()
         if gid in self.last_guest_punch_time:
-            if now - self.last_guest_punch_time[gid] < 45: # 45s cooldown
+            if now - self.last_guest_punch_time[gid] < 30: # 30s cooldown
                 return
         self.last_guest_punch_time[gid] = now
         print(f"[Camera {self.camera_id} - {self.role}] >>> GUEST MOVEMENT: {guest.get('guest_name', 'Guest')} ({guest.get('guest_code')}) as {self.role} at {self.gate}")
@@ -173,16 +173,16 @@ class LowLatencyCameraWorker:
                 _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 b64_snap = base64.b64encode(buffer).decode('utf-8')
                 payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
-            except Exception:
-                pass
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Guest snapshot encode error: {ex}")
         try:
-            requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=2)
+            requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=6)
         except Exception as e:
             print(f"[Camera {self.camera_id}] Guest movement note: {e}")
 
     def trigger_new_guest_enroll(self, embedding, confidence, frame_snapshot=None):
         now = time.time()
-        if now - self.last_unknown_enroll_time < 12: # 12s cooldown
+        if now - self.last_unknown_enroll_time < 3: # Responsive 3s cooldown
             return
         self.last_unknown_enroll_time = now
         print(f"[Camera {self.camera_id} - {self.role}] >>> UNKNOWN PERSON: Auto-enrolling new Guest / Customer at {self.gate} ({self.role})...")
@@ -196,13 +196,13 @@ class LowLatencyCameraWorker:
         }
         if frame_snapshot is not None:
             try:
-                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 b64_snap = base64.b64encode(buffer).decode('utf-8')
                 payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
-            except Exception:
-                pass
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Unknown snapshot encode error: {ex}")
         try:
-            resp = requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=2)
+            resp = requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=6)
             if resp.status_code == 201:
                 threading.Thread(target=manager.sync_guests, daemon=True).start()
         except Exception as e:
@@ -308,8 +308,15 @@ class LowLatencyCameraWorker:
                         bh = int(orig_face[3])
                         bbox = [bx, by, bw, bh]
 
-                        crop = raw_frame[max(0, by):min(h, by+bh), max(0, bx):min(w, bx+bw)]
-                        crop_copy = crop.copy() if crop.size > 0 else None
+                        # Add 25% padding margin around face box for optimal portrait capture
+                        margin_x = int(bw * 0.25)
+                        margin_y = int(bh * 0.25)
+                        y1 = max(0, by - margin_y)
+                        y2 = min(h, by + bh + margin_y)
+                        x1 = max(0, bx - margin_x)
+                        x2 = min(w, bx + bw + margin_x)
+                        crop = raw_frame[y1:y2, x1:x2]
+                        crop_copy = crop.copy() if crop.size > 0 else raw_frame.copy()
 
                         # TIER 1: Check Blacklisted Persons (Zero-Tolerance Security Priority)
                         best_blk = None

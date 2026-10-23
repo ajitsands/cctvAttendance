@@ -24,12 +24,16 @@ import {
   TrendingUp,
   MapPin,
   Shield,
-  Layers
+  ShieldAlert,
+  Layers,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import { useDialog } from '../context/DialogContext';
 
 export default function GuestsView() {
+  const { confirm, alert, toast } = useDialog();
   const [guests, setGuests] = useState([]);
   const [totals, setTotals] = useState({
     total_guests: 0,
@@ -68,6 +72,32 @@ export default function GuestsView() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [editMessage, setEditMessage] = useState({ type: '', text: '' });
+
+  // Blacklist Move Modal State
+  const [blacklistModalOpen, setBlacklistModalOpen] = useState(false);
+  const [selectedVisitorForBlacklist, setSelectedVisitorForBlacklist] = useState(null);
+  const [blacklistForm, setBlacklistForm] = useState({
+    threat_level: 'High',
+    reason: 'Restricted entry / Expelled Visitor',
+    notes: ''
+  });
+  const [movingToBlacklist, setMovingToBlacklist] = useState(false);
+  const [blacklistMessage, setBlacklistMessage] = useState({ type: '', text: '' });
+
+  // Photo Preview Lightbox Modal State
+  const [photoPreview, setPhotoPreview] = useState(null); // { guest, photoUrl }
+
+  const handlePreviewPhoto = (guest, customPhotoUrl = null) => {
+    if (!guest) return;
+    const photo = customPhotoUrl || guest.latest_photo || guest.first_photo;
+    const resolved = photo
+      ? (photo.startsWith('http') || photo.startsWith('data:') ? photo : `http://127.0.0.1:8000${photo.startsWith('/') ? '' : '/'}${photo}`)
+      : null;
+    setPhotoPreview({
+      guest,
+      photoUrl: resolved
+    });
+  };
 
   // Quick Date Range Handler
   const handleQuickRange = (rangeKey) => {
@@ -176,16 +206,55 @@ export default function GuestsView() {
     }
   };
 
+  // Open Blacklist Modal
+  const handleOpenBlacklistModal = (guest) => {
+    setSelectedVisitorForBlacklist(guest);
+    setBlacklistForm({
+      threat_level: 'High',
+      reason: `Unauthorized Entry - Visitor ${guest.guest_code} flagged by Security`,
+      notes: `Transferred directly from auto-logged visitor record ${guest.guest_name} (${guest.guest_code}).`
+    });
+    setBlacklistMessage({ type: '', text: '' });
+    setBlacklistModalOpen(true);
+  };
+
+  // Submit Move to Security Blacklist
+  const handleSubmitMoveToBlacklist = async (e) => {
+    e.preventDefault();
+    if (!selectedVisitorForBlacklist) return;
+    setMovingToBlacklist(true);
+    setBlacklistMessage({ type: '', text: '' });
+    try {
+      await api.moveGuestToBlacklist(selectedVisitorForBlacklist.id, blacklistForm);
+      setBlacklistMessage({ type: 'success', text: `Successfully transferred ${selectedVisitorForBlacklist.guest_name} to Security Blacklist!` });
+      setTimeout(() => {
+        setBlacklistModalOpen(false);
+        loadGuests();
+      }, 1000);
+    } catch (err) {
+      setBlacklistMessage({ type: 'error', text: err.message || 'Failed to move visitor to blacklist' });
+    } finally {
+      setMovingToBlacklist(false);
+    }
+  };
+
   // Delete Guest Record
   const handleDeleteGuest = async (guest) => {
-    if (!window.confirm(`Are you sure you want to delete ${guest.guest_name} (${guest.guest_code}) and all movement history?`)) {
-      return;
-    }
+    const isConfirmed = await confirm({
+      title: 'Delete Visitor Record',
+      message: `Are you sure you want to permanently delete ${guest.guest_name} (${guest.guest_code}) and all movement logs? This action cannot be reversed.`,
+      confirmText: 'Delete Visitor',
+      cancelText: 'Keep Record',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
     try {
       await api.deleteGuest(guest.id);
+      toast.success(`Visitor ${guest.guest_name} deleted successfully.`);
       loadGuests();
     } catch (err) {
-      alert(`Delete error: ${err.message}`);
+      toast.error(`Delete error: ${err.message}`);
     }
   };
 
@@ -200,7 +269,7 @@ export default function GuestsView() {
   // Export CSV
   const handleExportCSV = () => {
     if (!guests || guests.length === 0) {
-      alert('No guest records to export.');
+      toast.warning('No visitor or customer records available to export.');
       return;
     }
 
@@ -267,23 +336,35 @@ export default function GuestsView() {
       accessor: 'latest_photo',
       render: (row) => {
         const photo = row.latest_photo || row.first_photo;
+        const resolvedPhoto = photo
+          ? (photo.startsWith('http') || photo.startsWith('data:') ? photo : `http://127.0.0.1:8000${photo.startsWith('/') ? '' : '/'}${photo}`)
+          : null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              background: '#e2e8f0',
-              border: '2px solid rgba(168, 85, 247, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              {photo ? (
+            <div 
+              onClick={() => handlePreviewPhoto(row, resolvedPhoto)}
+              title="Click to view full-size photo & visitor details"
+              style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                background: '#e2e8f0',
+                border: '2px solid rgba(168, 85, 247, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+                transition: 'transform 0.15s, border-color 0.15s'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.borderColor = '#9333ea'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.4)'; }}
+            >
+              {resolvedPhoto ? (
                 <img 
-                  src={photo.startsWith('http') || photo.startsWith('data:') ? photo : `http://127.0.0.1:8000${photo}`} 
+                  src={resolvedPhoto} 
                   alt={row.guest_name}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   onError={(e) => { e.target.style.display = 'none'; }}
@@ -293,7 +374,11 @@ export default function GuestsView() {
               )}
             </div>
             <div>
-              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+              <div 
+                onClick={() => handlePreviewPhoto(row, resolvedPhoto)}
+                style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-main)', cursor: 'pointer' }}
+                title="Click to view details"
+              >
                 {row.guest_code}
               </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -307,27 +392,45 @@ export default function GuestsView() {
     {
       header: 'Guest / Customer Identity',
       accessor: 'guest_name',
-      render: (row) => (
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem' }}>
-            {row.guest_name}
+      render: (row) => {
+        const isVCode = /^V\d{6}$/i.test(row.guest_name);
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem' }}>
+                {row.guest_name}
+              </span>
+              {isVCode && (
+                <span style={{
+                  fontSize: '0.68rem',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  color: '#2563eb',
+                  fontWeight: 600,
+                  border: '1px solid rgba(59, 130, 246, 0.25)'
+                }}>
+                  Auto V-ID
+                </span>
+              )}
+            </div>
+            {row.company_name ? (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <Building size={11} /> {row.company_name}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
+                No organization assigned
+              </div>
+            )}
+            {row.phone && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
+                <Phone size={10} /> {row.phone}
+              </div>
+            )}
           </div>
-          {row.company_name ? (
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-              <Building size={11} /> {row.company_name}
-            </div>
-          ) : (
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
-              No organization assigned
-            </div>
-          )}
-          {row.phone && (
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
-              <Phone size={10} /> {row.phone}
-            </div>
-          )}
-        </div>
-      )
+        );
+      }
     },
     {
       header: 'Classification',
@@ -489,6 +592,25 @@ export default function GuestsView() {
             <Edit2 size={13} /> Edit
           </button>
           <button
+            onClick={() => handleOpenBlacklistModal(row)}
+            title="Move Visitor to Security Blacklist"
+            style={{
+              padding: '5px 8px',
+              borderRadius: '6px',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'rgba(239, 68, 68, 0.08)',
+              color: '#ef4444',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.75rem',
+              fontWeight: 600
+            }}
+          >
+            <ShieldAlert size={13} /> Blacklist
+          </button>
+          <button
             onClick={() => handleDeleteGuest(row)}
             title="Delete Guest"
             style={{
@@ -558,20 +680,21 @@ export default function GuestsView() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             onClick={loadGuests}
-            className="secondary-btn"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', height: '38px' }}
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             <span>Refresh</span>
           </button>
           <button
             onClick={handleExportCSV}
-            className="primary-btn"
+            className="btn btn-primary"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               fontSize: '0.85rem',
+              height: '38px',
               background: 'linear-gradient(135deg, #9333ea, #c026d3)',
               borderColor: '#9333ea'
             }}
@@ -721,7 +844,7 @@ export default function GuestsView() {
         {/* Input Controls Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
           gap: '12px',
           alignItems: 'end'
         }}>
@@ -733,7 +856,7 @@ export default function GuestsView() {
               type="date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setQuickRange('custom'); }}
-              className="form-input"
+              className="input"
               style={{ width: '100%', fontSize: '0.85rem' }}
             />
           </div>
@@ -746,7 +869,7 @@ export default function GuestsView() {
               type="date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setQuickRange('custom'); }}
-              className="form-input"
+              className="input"
               style={{ width: '100%', fontSize: '0.85rem' }}
             />
           </div>
@@ -758,7 +881,7 @@ export default function GuestsView() {
             <select
               value={guestType}
               onChange={(e) => setGuestType(e.target.value)}
-              className="form-input"
+              className="select"
               style={{ width: '100%', fontSize: '0.85rem' }}
             >
               <option value="">All Classifications</option>
@@ -777,7 +900,7 @@ export default function GuestsView() {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="form-input"
+              className="select"
               style={{ width: '100%', fontSize: '0.85rem' }}
             >
               <option value="">All Presence</option>
@@ -796,7 +919,7 @@ export default function GuestsView() {
                 placeholder="Search Name, Code, Org, Phone..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="form-input"
+                className="input"
                 style={{ width: '100%', paddingLeft: '28px', fontSize: '0.85rem' }}
               />
               <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -804,12 +927,17 @@ export default function GuestsView() {
           </div>
 
           <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'transparent', display: 'block', marginBottom: '4px', userSelect: 'none' }}>
+              Action
+            </label>
             <button
               onClick={handleResetFilters}
-              className="secondary-btn"
-              style={{ width: '100%', fontSize: '0.82rem', height: '38px' }}
+              className="btn btn-secondary"
+              style={{ width: '100%', fontSize: '0.82rem', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              title="Reset all filter fields"
             >
-              Reset Filters
+              <RotateCcw size={13} />
+              <span>Reset Filters</span>
             </button>
           </div>
         </div>
@@ -1027,15 +1155,23 @@ export default function GuestsView() {
                         }}
                       >
                         {/* Event Snapshot */}
-                        <div style={{
-                          width: '54px',
-                          height: '54px',
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          background: '#000',
-                          flexShrink: 0,
-                          border: '1px solid var(--border-color)'
-                        }}>
+                        <div 
+                          onClick={() => handlePreviewPhoto(selectedGuestTimeline, log.snapshot_path ? `http://127.0.0.1:8000${log.snapshot_path}` : null)}
+                          title="Click to enlarge snapshot & view profile"
+                          style={{
+                            width: '54px',
+                            height: '54px',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            background: '#000',
+                            flexShrink: 0,
+                            border: '1px solid var(--border-color)',
+                            cursor: 'pointer',
+                            transition: 'transform 0.15s'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
                           {log.snapshot_path ? (
                             <img
                               src={`http://127.0.0.1:8000${log.snapshot_path}`}
@@ -1117,7 +1253,7 @@ export default function GuestsView() {
             }}>
               <button
                 onClick={() => setTimelineModalOpen(false)}
-                className="secondary-btn"
+                className="btn btn-secondary"
                 style={{ fontSize: '0.85rem' }}
               >
                 Close Audit Trail
@@ -1273,7 +1409,7 @@ export default function GuestsView() {
                 <button
                   type="button"
                   onClick={() => setEditModalOpen(false)}
-                  className="secondary-btn"
+                  className="btn btn-secondary"
                   style={{ fontSize: '0.85rem' }}
                 >
                   Cancel
@@ -1281,13 +1417,561 @@ export default function GuestsView() {
                 <button
                   type="submit"
                   disabled={savingEdit}
-                  className="primary-btn"
-                  style={{ fontSize: '0.85rem', background: 'linear-gradient(135deg, #9333ea, #c026d3)' }}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', background: 'linear-gradient(135deg, #9333ea, #c026d3)', borderColor: '#9333ea' }}
                 >
                   {savingEdit ? 'Saving...' : 'Save Profile Details'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Move Visitor to Security Blacklist Modal */}
+      {blacklistModalOpen && selectedVisitorForBlacklist && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '2px solid #ef4444',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            boxShadow: '0 25px 50px -12px rgba(239, 68, 68, 0.35)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #ef4444 100%)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  borderRadius: '50%',
+                  padding: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <ShieldAlert size={22} color="#ffffff" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#fecaca' }}>
+                    RESTRICTED ACCESS ACTION
+                  </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
+                    Move Visitor to Security Blacklist
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setBlacklistModalOpen(false)}
+                style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ffffff', cursor: 'pointer', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitMoveToBlacklist} style={{ padding: '20px' }}>
+              {blacklistMessage.text && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: blacklistMessage.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                  color: blacklistMessage.type === 'success' ? '#059669' : '#dc2626',
+                  border: `1px solid ${blacklistMessage.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                }}>
+                  {blacklistMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>{blacklistMessage.text}</span>
+                </div>
+              )}
+
+              {/* Visitor Summary Card */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px',
+                background: 'rgba(239, 68, 68, 0.05)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: '10px',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  background: '#1e293b',
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px solid rgba(239, 68, 68, 0.4)'
+                }}>
+                  {(selectedVisitorForBlacklist.latest_photo || selectedVisitorForBlacklist.first_photo) ? (
+                    <img
+                      src={(selectedVisitorForBlacklist.latest_photo || selectedVisitorForBlacklist.first_photo).startsWith('http') || (selectedVisitorForBlacklist.latest_photo || selectedVisitorForBlacklist.first_photo).startsWith('data:')
+                        ? (selectedVisitorForBlacklist.latest_photo || selectedVisitorForBlacklist.first_photo)
+                        : `http://127.0.0.1:8000${selectedVisitorForBlacklist.latest_photo || selectedVisitorForBlacklist.first_photo}`}
+                      alt={selectedVisitorForBlacklist.guest_name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <Users size={24} color="#94a3b8" />
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>
+                    {selectedVisitorForBlacklist.guest_name}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    Code: {selectedVisitorForBlacklist.guest_code} | Total Visits: {selectedVisitorForBlacklist.total_visits}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, marginTop: '2px' }}>
+                    Face embedding & profile photo will be moved to Blacklist Registry.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    Security Threat Level *
+                  </label>
+                  <select
+                    value={blacklistForm.threat_level}
+                    onChange={(e) => setBlacklistForm(prev => ({ ...prev, threat_level: e.target.value }))}
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '0.85rem' }}
+                  >
+                    <option value="Critical">Critical Threat</option>
+                    <option value="High">High Risk</option>
+                    <option value="Medium">Medium Warning</option>
+                    <option value="Low">Low Precaution</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    Reason for Blacklist *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={blacklistForm.reason}
+                    onChange={(e) => setBlacklistForm(prev => ({ ...prev, reason: e.target.value }))}
+                    placeholder="e.g. Expelled visitor / Unauthorized"
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Guard Handling Instructions / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={blacklistForm.notes}
+                  onChange={(e) => setBlacklistForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="e.g. Deny entry immediately, escort off premises, notify security control."
+                  className="form-input"
+                  style={{ width: '100%', fontSize: '0.85rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                color: '#b91c1c',
+                marginBottom: '20px',
+                border: '1px solid rgba(239, 68, 68, 0.2)'
+              }}>
+                <strong>Security Impact:</strong> Once blacklisted, whenever this person is spotted at any CCTV Gate, the system will log an unauthorized access breach and trigger a full-screen alarm popup instantly.
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setBlacklistModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={movingToBlacklist}
+                  className="btn btn-danger"
+                  style={{ fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ShieldAlert size={14} />
+                  {movingToBlacklist ? 'Enforcing Blacklist...' : 'Confirm Move to Blacklist'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Visitor Face Image Lightbox & Identity Inspection */}
+      {photoPreview && photoPreview.guest && (
+        <div 
+          onClick={() => setPhotoPreview(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: '2px solid rgba(168, 85, 247, 0.4)',
+              borderRadius: '20px',
+              width: '100%',
+              maxWidth: '680px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 35px rgba(168, 85, 247, 0.25)',
+              overflow: 'hidden',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.15) 0%, rgba(192, 38, 211, 0.15) 100%)',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #9333ea, #c026d3)',
+                  borderRadius: '50%',
+                  padding: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff'
+                }}>
+                  <UserCheck size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9333ea' }}>
+                    CCTV EDGE AI IDENTIFICATION
+                  </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                    Visitor Face Portrait & Profile
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPhotoPreview(null)}
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body: Portrait + Bio Data */}
+            <div style={{ padding: '24px' }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '260px 1fr',
+                gap: '24px',
+                alignItems: 'start'
+              }}>
+                {/* Left: Enlarged Photo Card */}
+                <div>
+                  <div style={{
+                    width: '100%',
+                    height: '260px',
+                    borderRadius: '14px',
+                    overflow: 'hidden',
+                    background: '#0f172a',
+                    border: '2px solid rgba(168, 85, 247, 0.35)',
+                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative'
+                  }}>
+                    {photoPreview.photoUrl ? (
+                      <img
+                        src={photoPreview.photoUrl}
+                        alt={photoPreview.guest.guest_name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                        <Users size={48} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                        <div style={{ fontSize: '0.85rem' }}>No Snapshot Captured</div>
+                      </div>
+                    )}
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: '8px',
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)',
+                      color: '#ffffff',
+                      fontSize: '0.72rem',
+                      textAlign: 'center',
+                      fontWeight: 600
+                    }}>
+                      CCTV Live Facial Biometric Capture
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Security ID: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{photoPreview.guest.guest_code}</strong>
+                  </div>
+                </div>
+
+                {/* Right: Detailed Visitor Metadata */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                      {photoPreview.guest.guest_name}
+                    </h2>
+                    {/^V\d{6}$/i.test(photoPreview.guest.guest_name) && (
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: 'rgba(59, 130, 246, 0.12)',
+                        color: '#2563eb',
+                        fontWeight: 700,
+                        border: '1px solid rgba(59, 130, 246, 0.3)'
+                      }}>
+                        Auto V-ID
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Badges */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      ...getBadgeStyle(photoPreview.guest.guest_type)
+                    }}>
+                      <Tag size={12} />
+                      {photoPreview.guest.guest_type || 'Visitor'}
+                    </span>
+
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 10px',
+                      borderRadius: '14px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      background: photoPreview.guest.current_status === 'INSIDE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.1)',
+                      color: photoPreview.guest.current_status === 'INSIDE' ? '#059669' : '#64748b',
+                      border: photoPreview.guest.current_status === 'INSIDE' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.2)'
+                    }}>
+                      <span style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        background: photoPreview.guest.current_status === 'INSIDE' ? '#10b981' : '#94a3b8',
+                        boxShadow: photoPreview.guest.current_status === 'INSIDE' ? '0 0 6px #10b981' : 'none'
+                      }} />
+                      {photoPreview.guest.current_status || 'INSIDE'}
+                    </span>
+
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      background: 'rgba(37, 99, 235, 0.1)',
+                      color: '#2563eb'
+                    }}>
+                      {photoPreview.guest.total_visits || 1} Visits Recorded
+                    </span>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div style={{
+                    background: 'var(--bg-muted)',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr',
+                    gap: '10px',
+                    fontSize: '0.82rem',
+                    border: '1px solid var(--border-color)',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Organization / Company:</span>
+                      <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.company_name || 'Not Assigned'}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Contact Phone:</span>
+                      <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.phone || 'Not Assigned'}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>First Detected:</span>
+                      <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                        {photoPreview.guest.first_seen_at || 'N/A'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Last Detected:</span>
+                      <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                        {photoPreview.guest.last_seen_at || 'N/A'}
+                      </span>
+                    </div>
+
+                    {photoPreview.guest.notes && (
+                      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', marginTop: '2px' }}>
+                        <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Security Notes:</span>
+                        <div style={{ color: 'var(--text-main)', fontStyle: 'italic' }}>
+                          "{photoPreview.guest.notes}"
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{
+                marginTop: '16px',
+                paddingTop: '16px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={() => {
+                      const g = photoPreview.guest;
+                      setPhotoPreview(null);
+                      handleOpenEdit(g);
+                    }}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <Edit2 size={13} />
+                    Rename / Edit Details
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const g = photoPreview.guest;
+                      setPhotoPreview(null);
+                      handleViewTimeline(g);
+                    }}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <Eye size={13} />
+                    View Movement Timeline
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const g = photoPreview.guest;
+                      setPhotoPreview(null);
+                      handleOpenBlacklistModal(g);
+                    }}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <ShieldAlert size={13} />
+                    Move to Blacklist
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setPhotoPreview(null)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.82rem' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

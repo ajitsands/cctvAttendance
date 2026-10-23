@@ -16,12 +16,16 @@ import {
   MapPin, 
   ShieldCheck, 
   X,
-  FileText
+  FileText,
+  Crop
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import ImageCropModal from '../components/ImageCropModal';
+import { useDialog } from '../context/DialogContext';
 
 export default function BlacklistView() {
+  const { confirm, toast } = useDialog();
   const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'breaches'
   const [blacklistData, setBlacklistData] = useState([]);
   const [breachesData, setBreachesData] = useState([]);
@@ -60,6 +64,8 @@ export default function BlacklistView() {
   const [photoPreview, setPhotoPreview] = useState('');
   const [extractingFace, setExtractingFace] = useState(false);
   const [extractError, setExtractError] = useState('');
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState(null);
 
   // Resolve Form State
   const [resolveForm, setResolveForm] = useState({
@@ -104,41 +110,48 @@ export default function BlacklistView() {
     loadData();
   }, [search, threatFilter, breachStatusFilter]);
 
-  // Handle Photo Upload & AI Face Embedding Extraction
-  const handlePhotoUpload = async (e) => {
+  // Handle Photo Selection -> Open Crop Modal
+  const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const b64 = uploadEvent.target.result;
+      setCropImageSrc(b64);
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Called when user finishes cropping
+  const handleCropComplete = async (croppedB64) => {
+    setPhotoPreview(croppedB64);
+    setFormData(prev => ({ ...prev, photo_url: croppedB64 }));
     setExtractingFace(true);
     setExtractError('');
 
-    const reader = new FileReader();
-    reader.onload = async (uploadEvent) => {
-      const b64 = uploadEvent.target.result;
-      setPhotoPreview(b64);
-      setFormData(prev => ({ ...prev, photo_url: b64 }));
-
-      try {
-        const res = await api.extractFaceEmbedding(b64);
-        if (res.success && res.embedding) {
-          setFormData(prev => ({ ...prev, face_embedding: res.embedding }));
-        } else {
-          setExtractError(res.message || 'Face not detected clearly. Please upload a clear passport/front photo.');
-        }
-      } catch (err) {
-        setExtractError('Could not connect to Face AI engine for extraction.');
-      } finally {
-        setExtractingFace(false);
+    try {
+      const res = await api.extractFaceEmbedding(croppedB64);
+      if (res && res.success && res.embedding) {
+        setFormData(prev => ({ ...prev, face_embedding: res.embedding }));
+      } else {
+        setExtractError(res?.message || 'Face not detected clearly. Ensure face is centered and clearly lit.');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.warn('Blacklist AI extraction notice:', err);
+      setExtractError('Could not connect to Face AI engine for extraction.');
+    } finally {
+      setExtractingFace(false);
+    }
   };
 
   // Submit Blacklist Person Form
   const handleSubmitPerson = async (e) => {
     e.preventDefault();
     if (!formData.full_name || !formData.reason) {
-      alert('Full Name and Reason are required.');
+      toast.warning('Full Name and Reason are required.');
       return;
     }
 
@@ -147,23 +160,33 @@ export default function BlacklistView() {
         ...formData,
         id: editingPerson?.id
       });
+      toast.success(editingPerson ? 'Blacklist profile updated.' : 'Person enrolled into Blacklist.');
       setShowAddModal(false);
       setEditingPerson(null);
       resetForm();
       loadData();
     } catch (err) {
-      alert('Error saving record: ' + (err.message || 'Unknown error'));
+      toast.error('Error saving record: ' + (err.message || 'Unknown error'));
     }
   };
 
   // Delete Blacklisted Person
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to remove "${name}" from the Blacklist?`)) return;
+    const isConfirmed = await confirm({
+      title: 'Remove from Blacklist',
+      message: `Are you sure you want to remove "${name}" from the Security Blacklist? They will no longer trigger unauthorized access security alarms at gates.`,
+      confirmText: 'Remove Person',
+      cancelText: 'Keep Blacklisted',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
     try {
       await api.deleteBlacklistedPerson(id);
+      toast.success(`"${name}" removed from Blacklist.`);
       loadData();
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      toast.error('Failed to delete: ' + err.message);
     }
   };
 
@@ -178,11 +201,12 @@ export default function BlacklistView() {
         resolveForm.resolved_by,
         resolveForm.resolved_notes
       );
+      toast.success('Security breach incident marked as resolved.');
       setShowResolveModal(false);
       setSelectedBreach(null);
       loadData();
     } catch (err) {
-      alert('Failed to resolve breach: ' + err.message);
+      toast.error('Failed to resolve breach: ' + err.message);
     }
   };
 
@@ -649,39 +673,53 @@ export default function BlacklistView() {
       {/* MODAL 1: Add / Edit Blacklisted Person */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '580px', width: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444' }}>
-                <ShieldAlert size={20} />
+          <div className="modal-content" style={{ maxWidth: '620px', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#ef4444', fontSize: '1.2rem', fontWeight: 800 }}>
+                <ShieldAlert size={22} />
                 {editingPerson ? 'Edit Blacklisted Profile' : 'Enroll Blacklisted Person'}
               </h3>
               <button 
                 onClick={() => setShowAddModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}
+                title="Close"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitPerson}>
+            <form onSubmit={handleSubmitPerson} style={{ padding: '1.5rem' }}>
               {/* Photo Upload & AI Extraction Preview */}
-              <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '1.25rem', alignItems: 'center' }}>
+              <div style={{ 
+                display: 'flex', 
+                gap: '1.25rem', 
+                marginBottom: '1.35rem', 
+                alignItems: 'center',
+                padding: '1rem',
+                borderRadius: '12px',
+                background: 'var(--bg-muted)',
+                border: '1px solid var(--border-color)'
+              }}>
                 <div style={{ 
-                  width: '90px', 
-                  height: '90px', 
-                  borderRadius: 'var(--radius-md)', 
-                  background: 'var(--bg-muted)', 
-                  border: '2px dashed #ef4444',
+                  width: '96px', 
+                  height: '96px', 
+                  borderRadius: '12px', 
+                  background: 'var(--bg-surface)', 
+                  border: photoPreview ? '2px solid #ef4444' : '2px dashed rgba(239, 68, 68, 0.4)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   overflow: 'hidden',
-                  flexShrink: 0
+                  flexShrink: 0,
+                  boxShadow: photoPreview ? '0 4px 12px rgba(239, 68, 68, 0.15)' : 'none'
                 }}>
                   {photoPreview ? (
                     <img src={photoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <Camera size={26} color="#ef4444" />
+                    <div style={{ textAlign: 'center', color: '#ef4444', padding: '6px' }}>
+                      <Camera size={28} />
+                      <div style={{ fontSize: '0.65rem', fontWeight: 700, marginTop: '2px' }}>NO PHOTO</div>
+                    </div>
                   )}
                 </div>
 
@@ -693,39 +731,84 @@ export default function BlacklistView() {
                     style={{ display: 'none' }} 
                     onChange={handlePhotoUpload} 
                   />
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary" 
-                    style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={extractingFace}
-                  >
-                    <Upload size={14} />
-                    {extractingFace ? 'Extracting AI Embedding...' : 'Upload Reference Face Photo'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={extractingFace}
+                    >
+                      <Upload size={14} />
+                      <span>{photoPreview ? 'Change Photo' : 'Upload Face Photo'}</span>
+                    </button>
 
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                    Upload a clear front-facing portrait. Offline YuNet + SFace will automatically generate biometric embeddings.
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
+                        onClick={() => {
+                          setCropImageSrc(photoPreview);
+                          setCropModalOpen(true);
+                        }}
+                        disabled={extractingFace}
+                        title="Crop & frame portrait"
+                      >
+                        <Crop size={14} />
+                        <span>Crop / Frame</span>
+                      </button>
+                    )}
+
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '0.45rem 0.65rem', color: '#ef4444' }}
+                        onClick={() => {
+                          setPhotoPreview('');
+                          setFormData(prev => ({ ...prev, photo_url: '', face_embedding: null }));
+                          setExtractError('');
+                        }}
+                        disabled={extractingFace}
+                        title="Remove photo"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
 
-                  {formData.face_embedding && (
-                    <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700, marginTop: '0.25rem' }}>
-                      ✓ 128-D Biometric Embedding Successfully Enrolled
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.45rem', lineHeight: '1.35' }}>
+                    Interactive face crop will open automatically upon upload. Offline YuNet + SFace will extract 128-D biometric vector.
+                  </div>
+
+                  {extractingFace && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: '#8b5cf6', fontWeight: 600, marginTop: '0.4rem' }}>
+                      <RefreshCw size={12} className="spin" />
+                      <span>Extracting 128-D biometric vectors...</span>
                     </div>
                   )}
 
-                  {extractError && (
-                    <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, marginTop: '0.25rem' }}>
-                      ⚠ {extractError}
+                  {formData.face_embedding && !extractingFace && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, marginTop: '0.4rem' }}>
+                      <CheckCircle2 size={13} />
+                      <span>128-D Biometric Embedding Successfully Enrolled</span>
+                    </div>
+                  )}
+
+                  {extractError && !extractingFace && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, marginTop: '0.4rem' }}>
+                      <AlertTriangle size={13} />
+                      <span>{extractError}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Form Fields */}
+              {/* Form Fields Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
-                  <label className="form-label">Full Name *</label>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Full Name *</label>
                   <input 
                     type="text" 
                     className="input" 
@@ -737,7 +820,7 @@ export default function BlacklistView() {
                 </div>
 
                 <div>
-                  <label className="form-label">Security ID Code</label>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Security ID Code</label>
                   <input 
                     type="text" 
                     className="input" 
@@ -748,7 +831,7 @@ export default function BlacklistView() {
                 </div>
 
                 <div>
-                  <label className="form-label">Threat Severity Level</label>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Threat Severity Level</label>
                   <select 
                     className="select"
                     value={formData.threat_level}
@@ -762,7 +845,7 @@ export default function BlacklistView() {
                 </div>
 
                 <div>
-                  <label className="form-label">Registry Status</label>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Registry Status</label>
                   <select 
                     className="select"
                     value={formData.status}
@@ -775,7 +858,7 @@ export default function BlacklistView() {
               </div>
 
               <div style={{ marginBottom: '1rem' }}>
-                <label className="form-label">Reason for Blacklisting *</label>
+                <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Reason for Blacklisting *</label>
                 <textarea 
                   className="input" 
                   rows={2} 
@@ -783,41 +866,55 @@ export default function BlacklistView() {
                   value={formData.reason}
                   onChange={e => setFormData({ ...formData, reason: e.target.value })}
                   required
+                  style={{ minHeight: '64px' }}
                 />
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>
-                <label className="form-label">Security Guard Handling Instructions (Optional)</label>
+                <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 700 }}>Security Guard Handling Instructions (Optional)</label>
                 <textarea 
                   className="input" 
                   rows={2} 
                   placeholder="e.g. Do not engage physically; notify shift supervisor immediately."
                   value={formData.notes}
                   onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                  style={{ minHeight: '64px' }}
                 />
               </div>
 
               {/* Submit Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
                   onClick={() => setShowAddModal(false)}
+                  style={{ height: '38px' }}
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
                   className="btn btn-danger"
-                  style={{ fontWeight: 700 }}
+                  style={{ fontWeight: 700, height: '38px', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  {editingPerson ? 'Save Changes' : 'Enroll into Blacklist'}
+                  <ShieldAlert size={16} />
+                  <span>{editingPerson ? 'Save Changes' : 'Enroll into Blacklist'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Image Crop Modal for Blacklist Reference Photo */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => setCropModalOpen(false)}
+        onCropComplete={handleCropComplete}
+        title="Crop Blacklist Face Reference"
+        cropShape="round"
+      />
 
       {/* MODAL 2: Resolve Incident Modal */}
       {showResolveModal && selectedBreach && (

@@ -151,6 +151,10 @@ export const api = {
   deleteGuest: (id) => request(`${API_BASE}/guests.php?id=${id}`, {
     method: 'DELETE'
   }),
+  moveGuestToBlacklist: (id, payload = {}) => request(`${API_BASE}/guests.php?action=move_to_blacklist`, {
+    method: 'POST',
+    body: JSON.stringify({ guest_id: id, ...payload })
+  }),
 
   // Version 2.0: Real-Time Security Alert Stream
   pollSecurityAlerts: (lastId = 0) => request(`${API_BASE}/security_alerts.php?last_id=${lastId}`),

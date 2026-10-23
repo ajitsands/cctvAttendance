@@ -12,8 +12,10 @@ import {
   Cpu
 } from 'lucide-react';
 import { api } from '../api';
+import { useDialog } from '../context/DialogContext';
 
 export default function SettingsView({ onSettingsSaved }) {
+  const { toast } = useDialog();
   const [settings, setSettings] = useState({
     company_name: 'SaNDS Lab Middle East W.L.L',
     logo_url: '/logos/SaNDSLab-LogoNewUpdated copy.png',
@@ -74,8 +76,9 @@ export default function SettingsView({ onSettingsSaved }) {
       document.documentElement.style.setProperty('--menu-accent', settings.theme_menu_color);
 
       if (onSettingsSaved) onSettingsSaved(settings);
+      toast.success('Settings and brand customization saved successfully!');
     } catch (err) {
-      alert('Error saving settings: ' + err.message);
+      toast.error('Error saving settings: ' + err.message);
     } finally {
       setSaving(false);
     }

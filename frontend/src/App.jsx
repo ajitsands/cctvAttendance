@@ -87,11 +87,12 @@ export default function App() {
         const recent = res.data?.recent_punches;
         if (recent && recent.length > 0) {
           const newest = recent[0];
+          const punchKey = `${newest.person_type || 'EMP'}_${newest.id}_${newest.punch_time}`;
           if (isInitialLoadRef.current) {
-            lastSeenPunchIdRef.current = newest.id;
+            lastSeenPunchIdRef.current = punchKey;
             isInitialLoadRef.current = false;
-          } else if (lastSeenPunchIdRef.current && newest.id > lastSeenPunchIdRef.current) {
-            lastSeenPunchIdRef.current = newest.id;
+          } else if (lastSeenPunchIdRef.current && lastSeenPunchIdRef.current !== punchKey) {
+            lastSeenPunchIdRef.current = punchKey;
             // Admin setting check: '1' = Show, '0' = Do not show
             const isPopupAllowed = settings?.show_live_popup !== '0' && settings?.show_live_popup !== false;
             if (isPopupAllowed) {

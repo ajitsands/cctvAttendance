@@ -242,16 +242,16 @@ if ($action === 'punch' && $method === 'POST') {
     $totalCameras = (int)$db->query("SELECT COUNT(*) FROM cameras WHERE is_active = 1")->fetchColumn();
     $onlineCameras = (int)$db->query("SELECT COUNT(*) FROM cameras WHERE is_active = 1 AND status = 'Online'")->fetchColumn();
 
-    // Recent 10 live punches (always show latest activity)
+    // Recent 10 live punches for Employees / Staff only
     $stmtRecent = $db->query("
-        SELECT l.*, u.full_name, u.user_code, u.profile_photo, u.department, c.camera_name
+        SELECT l.*, u.full_name, u.user_code, u.profile_photo, u.department, c.camera_name, 'EMPLOYEE' as person_type
         FROM attendance_logs l
         JOIN users u ON l.user_id = u.id
         LEFT JOIN cameras c ON l.camera_id = c.id
         ORDER BY l.id DESC
         LIMIT 10
     ");
-    $recentPunches = $stmtRecent->fetchAll();
+    $recentPunches = $stmtRecent ? ($stmtRecent->fetchAll() ?: []) : [];
 
     jsonResponse([
         'date' => $date,

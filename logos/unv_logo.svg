@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 90" width="320" height="90">
+  <defs>
+    <linearGradient id="unvBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0066b3" />
+      <stop offset="100%" stop-color="#004b87" />
+    </linearGradient>
+  </defs>
+  <rect width="320" height="90" rx="12" fill="#ffffff"/>
+  <!-- Stylized UNV wordmark -->
+  <g fill="url(#unvBlue)">
+    <!-- 'u' -->
+    <path d="M 38 24 L 38 46 C 38 56 44 62 55 62 C 66 62 72 56 72 46 L 72 24 L 60 24 L 60 45 C 60 50 58 53 55 53 C 52 53 50 50 50 45 L 50 24 Z" />
+    <!-- 'n' -->
+    <path d="M 85 24 L 85 62 L 97 62 L 97 41 C 97 36 99 33 102 33 C 105 33 107 36 107 41 L 107 62 L 119 62 L 119 40 C 119 30 113 24 102 24 C 95 24 89 28 85 34 L 85 24 Z" />
+    <!-- 'v' -->
+    <path d="M 132 24 L 145 62 L 157 62 L 170 24 L 157 24 L 151 45 L 145 24 Z" />
+  </g>
+  <!-- Dot / Accent circle -->
+  <circle cx="178" cy="28" r="4.5" fill="#00a3e0" />
+  <!-- Divider -->
+  <line x1="194" y1="22" x2="194" y2="64" stroke="#d1d5db" stroke-width="1.5" />
+  <!-- Uniview Text -->
+  <text x="206" y="42" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-size="16" font-weight="800" fill="#004b87" letter-spacing="0.5">uniview</text>
+  <text x="206" y="58" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-size="8.5" font-weight="600" fill="#64748b" letter-spacing="0.2">Better Security, Better World</text>
+</svg>

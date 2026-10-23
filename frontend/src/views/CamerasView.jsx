@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import { useDialog } from '../context/DialogContext';
 
 export default function CamerasView({ onCamerasChanged }) {
+  const { confirm, toast } = useDialog();
   const [cameras, setCameras] = useState([]);
   const [pairs, setPairs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -120,8 +122,9 @@ export default function CamerasView({ onCamerasChanged }) {
         await fetch('http://127.0.0.1:8001/reload_cameras');
       } catch (err) {}
       if (onCamerasChanged) onCamerasChanged();
+      toast.success(editingCamera ? 'Camera updated successfully.' : 'New camera added.');
     } catch (err) {
-      alert('Error saving camera: ' + err.message);
+      toast.error('Error saving camera: ' + err.message);
     }
   };
 
@@ -131,20 +134,29 @@ export default function CamerasView({ onCamerasChanged }) {
       await api.saveCameraPair(pairForm);
       setPairModalOpen(false);
       fetchData();
+      toast.success('Gate pair configuration saved.');
     } catch (err) {
-      alert('Error saving gate pair: ' + err.message);
+      toast.error('Error saving gate pair: ' + err.message);
     }
   };
 
-  const handleDeleteCamera = async (id) => {
-    if (confirm('Delete this camera?')) {
-      try {
-        await api.deleteCameraOrPair(id, 'camera');
-        fetchData();
-        if (onCamerasChanged) onCamerasChanged();
-      } catch (err) {
-        alert(err.message);
-      }
+  const handleDeleteCamera = async (id, name = 'this camera') => {
+    const isConfirmed = await confirm({
+      title: 'Delete Camera',
+      message: `Are you sure you want to delete ${name}? RTSP stream ingestion and face detection for this device will be stopped.`,
+      confirmText: 'Delete Camera',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.deleteCameraOrPair(id, 'camera');
+      toast.success('Camera removed successfully.');
+      fetchData();
+      if (onCamerasChanged) onCamerasChanged();
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
