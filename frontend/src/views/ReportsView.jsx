@@ -219,7 +219,7 @@ export default function ReportsView() {
   return (
     <div>
       {/* Header */}
-      <div className="page-header">
+      <div className="page-header no-print">
         <div>
           <h2 className="page-title">
             <FileBarChart size={26} color="var(--menu-accent)" />
@@ -242,7 +242,7 @@ export default function ReportsView() {
       </div>
 
       {/* View Switcher Tabs */}
-      <div style={{ 
+      <div className="no-print" style={{ 
         display: 'flex', 
         gap: '0.75rem', 
         marginBottom: '1.5rem',

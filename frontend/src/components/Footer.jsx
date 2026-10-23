@@ -13,7 +13,7 @@ export default function Footer({ footerText }) {
         <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
           <span>Version 2.0.0 (Local Build)</span>
           <span>•</span>
-          <span>Offline Edge AI Engine (YuNet + SFace)</span>
+          <span>Offline Edge SaNDS Lab AI Engine</span>
           <span>•</span>
           <span>GCC & India Edition</span>
         </div>

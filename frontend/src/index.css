@@ -1165,3 +1165,226 @@ textarea.input, textarea.form-input {
   height: 100%;
   transition: width 0.05s linear;
 }
+
+/* ================== Monthly Attendance Matrix (1 to 31 Days) Screen Styles ================== */
+.matrix-print-header,
+.matrix-print-footer {
+  display: none;
+}
+
+.matrix-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Force header font to pure white and bold */
+.matrix-table thead tr th {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.matrix-table thead th.matrix-th-employee,
+.matrix-table thead th.matrix-th-summary,
+.matrix-table thead th.matrix-th-workday {
+  background: #1e3a8a !important;
+  color: #ffffff !important;
+}
+
+.matrix-table thead th.matrix-th-holiday {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.matrix-table thead th * {
+  color: #ffffff !important;
+}
+
+/* ================== Monthly Attendance Matrix Print (Landscape 31 Days) ================== */
+@page {
+  size: landscape;
+  margin: 5mm 3mm;
+}
+
+@media print {
+  html, body, #root {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 6pt !important;
+  }
+
+  /* Hide app navigation, header, topbar, sidebars, buttons, filters */
+  .app-header,
+  .header-topbar,
+  .menu-container,
+  .page-header,
+  .no-print,
+  button,
+  .theme-toggle-btn {
+    display: none !important;
+  }
+
+  /* Show Matrix Print Header & Footer */
+  .matrix-print-header {
+    display: block !important;
+    margin-bottom: 8px !important;
+  }
+
+  .matrix-print-footer {
+    display: block !important;
+    margin-top: 6px !important;
+  }
+
+  .matrix-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+  }
+
+  .matrix-title-bar {
+    display: flex !important;
+    padding: 5px 8px !important;
+    background: #1e3a8a !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    border-radius: 4px 4px 0 0 !important;
+  }
+
+  .matrix-title-bar h3 {
+    font-size: 8pt !important;
+    color: #ffffff !important;
+  }
+
+  .matrix-title-bar span,
+  .matrix-title-bar strong {
+    font-size: 5.5pt !important;
+    color: #ffffff !important;
+  }
+
+  .matrix-scroll-container {
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+  }
+
+  .matrix-table {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 5.2pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Explicit column widths for 100% landscape distribution:
+     Employee: 10.5%
+     Summary: 8.5%
+     31 Days: 81% / 31 = 2.61% per day column
+  */
+  .matrix-table th.matrix-th-employee,
+  .matrix-table td.matrix-td-employee {
+    width: 10.5% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    position: static !important;
+    box-shadow: none !important;
+    padding: 2px 2px !important;
+    font-size: 5.2pt !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+
+  .matrix-table th.matrix-th-summary,
+  .matrix-table td.matrix-td-summary {
+    width: 8.5% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    position: static !important;
+    box-shadow: none !important;
+    padding: 2px 2px !important;
+    font-size: 5pt !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+
+  .matrix-table th.matrix-th-day,
+  .matrix-table td.matrix-td-day {
+    width: 2.61% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 2px 1px !important;
+    text-align: center !important;
+    font-size: 4.8pt !important;
+    border: 1px solid #cbd5e1 !important;
+    overflow: hidden !important;
+    word-break: break-all !important;
+  }
+
+  /* Force background colors to print */
+  .matrix-table thead tr th {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    border: 1px solid #0f172a !important;
+  }
+
+  .matrix-table thead th.matrix-th-employee,
+  .matrix-table thead th.matrix-th-summary,
+  .matrix-table thead th.matrix-th-workday {
+    background: #1e3a8a !important;
+    color: #ffffff !important;
+  }
+
+  .matrix-table thead th.matrix-th-holiday {
+    background: #dc2626 !important;
+    color: #ffffff !important;
+  }
+
+  .matrix-table thead th * {
+    color: #ffffff !important;
+  }
+
+  .badge-holiday {
+    background: #fee2e2 !important;
+    color: #dc2626 !important;
+    border: 0.5px solid #dc2626 !important;
+    font-weight: 800 !important;
+    font-size: 4.5pt !important;
+    padding: 1px 1px !important;
+  }
+
+  .badge-absent {
+    background: #fee2e2 !important;
+    color: #dc2626 !important;
+    font-weight: 700 !important;
+    font-size: 4.5pt !important;
+    padding: 1px 1px !important;
+  }
+
+  .print-hide-icon {
+    display: none !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .matrix-table tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+

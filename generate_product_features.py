@@ -2073,7 +2073,7 @@ html_content = f"""<!DOCTYPE html>
     </div>
     <div class="footer-legal">
       <div class="footer-mandate">
-        Powerd &amp; Enginered By <span>SaNDS Lab Middle East W.L.L</span> All right Reserved • <strong>Custom AI Engineered by SaNDS Lab</strong>
+        Powerd &amp; Enginered By <span>SaNDS Lab Middle East W.L.L</span> All right Reserved • <strong>Offline Edge SaNDS Lab AI Engine</strong>
       </div>
       <div>
         Official Product Specifications &amp; Solution Features Guide
@@ -2166,7 +2166,7 @@ if os.path.exists(edge_exe):
         ftr_left_rect = fitz.Rect(40, height - 32, width - 160, height - 8)
         page.insert_textbox(
             ftr_left_rect,
-            "Powerd & Enginered By SaNDS Lab Middle East W.L.L All right Reserved\nCustom AI Engineered by SaNDS Lab  |  UNV Recommended & Multi-Brand Compatible",
+            "Powerd & Enginered By SaNDS Lab Middle East W.L.L All right Reserved\nOffline Edge SaNDS Lab AI Engine  |  UNV Recommended & Multi-Brand Compatible",
             fontname="helv",
             fontsize=7.2,
             color=(15/255, 23/255, 42/255),
