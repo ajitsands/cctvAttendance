@@ -159,6 +159,22 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ guest_id: id, ...payload })
   }),
+  archiveGuests: (ids) => request(`${API_BASE}/guests.php?action=archive`, {
+    method: 'POST',
+    body: JSON.stringify({ guest_ids: ids })
+  }),
+  restoreGuests: (ids) => request(`${API_BASE}/guests.php?action=restore`, {
+    method: 'POST',
+    body: JSON.stringify({ guest_ids: ids })
+  }),
+  bulkDeleteGuests: (ids) => request(`${API_BASE}/guests.php?action=bulk_delete`, {
+    method: 'POST',
+    body: JSON.stringify({ guest_ids: ids })
+  }),
+  moveGuestsToTamper: (ids, payload = {}) => request(`${API_BASE}/guests.php?action=move_to_tamper`, {
+    method: 'POST',
+    body: JSON.stringify({ guest_ids: ids, ...payload })
+  }),
 
   // Version 2.0: Real-Time Security Alert Stream
   pollSecurityAlerts: (lastId = 0) => request(`${API_BASE}/security_alerts.php?last_id=${lastId}`),

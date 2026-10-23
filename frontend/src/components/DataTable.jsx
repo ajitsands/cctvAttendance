@@ -257,7 +257,7 @@ export default function DataTable({
                       gap: '0.45rem',
                       justifyContent: col.align === 'center' ? 'center' : (col.align === 'right' ? 'flex-end' : 'flex-start')
                     }}>
-                      <span>{col.label}</span>
+                      <span>{col.label ?? col.header}</span>
                       {isSortable && (
                         <span className={`datatable-sort-indicator ${isSorted ? 'active' : ''}`}>
                           {isSorted ? (

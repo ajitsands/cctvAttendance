@@ -29,7 +29,9 @@ import {
   RotateCcw,
   Camera,
   Maximize2,
-  ExternalLink
+  ExternalLink,
+  Archive,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
@@ -46,6 +48,11 @@ export default function GuestsView() {
     avg_visit_minutes: 0
   });
   const [loading, setLoading] = useState(true);
+
+  // Tab & Multi-Selection State
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
+  const [tabCounts, setTabCounts] = useState({ active_count: 0, archived_count: 0 });
+  const [selectedGuestIds, setSelectedGuestIds] = useState([]);
 
   // Filters State
   const [startDate, setStartDate] = useState(
@@ -146,10 +153,12 @@ export default function GuestsView() {
         end_date: endDate,
         guest_type: guestType,
         status: status,
-        search: search
+        search: search,
+        is_archived: activeTab === 'archived' ? 1 : 0
       });
 
       setGuests(res.data?.guests || []);
+      setTabCounts(res.data?.counts || { active_count: 0, archived_count: 0 });
       setTotals(res.data?.totals || {
         total_guests: 0,
         currently_inside: 0,
@@ -165,8 +174,9 @@ export default function GuestsView() {
   };
 
   useEffect(() => {
+    setSelectedGuestIds([]);
     loadGuests();
-  }, [startDate, endDate, guestType, status, search]);
+  }, [startDate, endDate, guestType, status, search, activeTab]);
 
   // View Timeline Details
   const handleViewTimeline = async (guest) => {
@@ -249,20 +259,118 @@ export default function GuestsView() {
     }
   };
 
-  // Delete Guest Record
-  const handleDeleteGuest = async (guest) => {
+  // Multi-Selection Handlers
+  const handleToggleSelect = (id) => {
+    setSelectedGuestIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedGuestIds.length === guests.length) {
+      setSelectedGuestIds([]);
+    } else {
+      setSelectedGuestIds(guests.map(g => g.id));
+    }
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedGuestIds([]);
+  };
+
+  // Move Visitor(s) to Archive Vault
+  const handleArchive = async (target) => {
+    const ids = Array.isArray(target) ? target : [target.id || target];
+    if (ids.length === 0) return;
+
     const isConfirmed = await confirm({
-      title: 'Delete Visitor Record',
-      message: `Are you sure you want to permanently delete ${guest.guest_name} (${guest.guest_code}) and all movement logs? This action cannot be reversed.`,
-      confirmText: 'Delete Visitor',
+      title: 'Move to Archive Vault',
+      message: `Move ${ids.length === 1 ? 'this visitor' : `${ids.length} selected visitors`} to the Archive Vault? They will be removed from active tracking but all logs remain preserved in the archive.`,
+      confirmText: 'Move to Archive',
+      cancelText: 'Cancel'
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.archiveGuests(ids);
+      toast.success(`Successfully archived ${ids.length === 1 ? 'visitor' : `${ids.length} visitors`}.`);
+      setSelectedGuestIds([]);
+      loadGuests();
+    } catch (err) {
+      toast.error(`Archive error: ${err.message}`);
+    }
+  };
+
+  // Restore Visitor(s) from Archive back to Active
+  const handleRestore = async (target) => {
+    const ids = Array.isArray(target) ? target : [target.id || target];
+    if (ids.length === 0) return;
+
+    const isConfirmed = await confirm({
+      title: 'Restore to Active Visitors',
+      message: `Restore ${ids.length === 1 ? 'this visitor' : `${ids.length} selected visitors`} back to the active visitor ledger?`,
+      confirmText: 'Restore',
+      cancelText: 'Cancel'
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.restoreGuests(ids);
+      toast.success(`Successfully restored ${ids.length === 1 ? 'visitor' : `${ids.length} visitors`} to active status.`);
+      setSelectedGuestIds([]);
+      loadGuests();
+    } catch (err) {
+      toast.error(`Restore error: ${err.message}`);
+    }
+  };
+
+  // Move Visitor(s) to Try to Tamper Area (Anti-Spoof Ledger)
+  const handleMoveToTamper = async (target) => {
+    const ids = Array.isArray(target) ? target : [target.id || target];
+    if (ids.length === 0) return;
+
+    const isConfirmed = await confirm({
+      title: 'Move to Try to Tamper Area',
+      message: `Flag ${ids.length === 1 ? 'this visitor' : `${ids.length} selected visitors`} and transfer to the Anti-Tamper & Security Audit Area for spoof investigation?`,
+      confirmText: 'Move to Tamper Area',
+      cancelText: 'Cancel'
+    });
+    if (!isConfirmed) return;
+
+    try {
+      await api.moveGuestsToTamper(ids, {
+        reason: 'Flagged from Visitor Ledger for Tamper & Anti-Spoof Audit',
+        event_type: 'Manual Flagged Visitor / Tamper Investigation'
+      });
+      toast.success(`Transferred ${ids.length === 1 ? 'visitor' : `${ids.length} visitors`} to Try to Tamper Area!`);
+      setSelectedGuestIds([]);
+    } catch (err) {
+      toast.error(`Tamper transfer error: ${err.message}`);
+    }
+  };
+
+  // Delete Guest Record(s) - Handles both Active and Archive permanent purge
+  const handleDeleteGuest = async (target, forcePermanent = false) => {
+    const ids = Array.isArray(target) ? target : [target.id || target];
+    if (ids.length === 0) return;
+
+    const isPermanent = forcePermanent || activeTab === 'archived';
+
+    const isConfirmed = await confirm({
+      title: isPermanent ? 'Permanently Delete From System' : 'Delete Visitor Record',
+      message: isPermanent
+        ? `CAUTION: Are you sure you want to permanently erase ${ids.length === 1 ? 'this visitor' : `${ids.length} visitors`} and ALL movement logs/photos from the entire database? This cannot be recovered.`
+        : `Are you sure you want to delete ${ids.length === 1 ? 'this visitor' : `${ids.length} visitors`}? (Tip: You can use 'Move to Archive' to safely store them in the Archive Vault).`,
+      confirmText: isPermanent ? 'Permanently Erase' : 'Delete Record',
       cancelText: 'Keep Record',
       isDanger: true
     });
     if (!isConfirmed) return;
 
     try {
-      await api.deleteGuest(guest.id);
-      toast.success(`Visitor ${guest.guest_name} deleted successfully.`);
+      await api.bulkDeleteGuests(ids);
+      toast.success(`${ids.length === 1 ? 'Visitor record' : `${ids.length} visitor records`} deleted.`);
+      setSelectedGuestIds([]);
       loadGuests();
     } catch (err) {
       toast.error(`Delete error: ${err.message}`);
@@ -342,6 +450,34 @@ export default function GuestsView() {
 
   // Table Columns Definition
   const columns = [
+    {
+      header: (
+        <input
+          type="checkbox"
+          checked={guests.length > 0 && selectedGuestIds.length === guests.length}
+          onChange={handleSelectAll}
+          title="Select / Deselect All on this page"
+          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#9333ea' }}
+        />
+      ),
+      accessor: 'id',
+      key: 'select_col',
+      sortable: false,
+      width: '42px',
+      align: 'center',
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedGuestIds.includes(row.id)}
+          onChange={(e) => {
+            e.stopPropagation();
+            handleToggleSelect(row.id);
+          }}
+          title={`Select ${row.guest_name}`}
+          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#9333ea' }}
+        />
+      )
+    },
     {
       header: 'Face Photo',
       accessor: 'latest_photo',
@@ -593,13 +729,15 @@ export default function GuestsView() {
     {
       header: 'Actions',
       accessor: 'id',
+      key: 'actions_col',
+      sortable: false,
       render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
           <button
             onClick={() => handleViewTimeline(row)}
             title="View Visit Timeline & Snapshots"
             style={{
-              padding: '5px 8px',
+              padding: '4px 7px',
               borderRadius: '6px',
               border: '1px solid var(--border-color)',
               background: 'var(--bg-card)',
@@ -607,65 +745,154 @@ export default function GuestsView() {
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
-              fontSize: '0.75rem',
+              gap: '3px',
+              fontSize: '0.73rem',
               fontWeight: 500
             }}
           >
-            <Eye size={13} /> History
+            <Eye size={12} /> History
           </button>
-          <button
-            onClick={() => handleOpenEdit(row)}
-            title="Edit Guest / Customer Details"
-            style={{
-              padding: '5px 8px',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-card)',
-              color: '#d97706',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '0.75rem',
-              fontWeight: 500
-            }}
-          >
-            <Edit2 size={13} /> Edit
-          </button>
-          <button
-            onClick={() => handleOpenBlacklistModal(row)}
-            title="Move Visitor to Security Blacklist"
-            style={{
-              padding: '5px 8px',
-              borderRadius: '6px',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              background: 'rgba(239, 68, 68, 0.08)',
-              color: '#ef4444',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '0.75rem',
-              fontWeight: 600
-            }}
-          >
-            <ShieldAlert size={13} /> Blacklist
-          </button>
-          <button
-            onClick={() => handleDeleteGuest(row)}
-            title="Delete Guest"
-            style={{
-              padding: '5px 7px',
-              borderRadius: '6px',
-              border: '1px solid rgba(239, 68, 68, 0.2)',
-              background: 'rgba(239, 68, 68, 0.05)',
-              color: '#ef4444',
-              cursor: 'pointer'
-            }}
-          >
-            <Trash2 size={13} />
-          </button>
+
+          {activeTab === 'active' ? (
+            <>
+              <button
+                onClick={() => handleOpenEdit(row)}
+                title="Edit Guest / Customer Details"
+                style={{
+                  padding: '4px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-card)',
+                  color: '#d97706',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 500
+                }}
+              >
+                <Edit2 size={12} /> Edit
+              </button>
+
+              <button
+                onClick={() => handleMoveToTamper(row)}
+                title="Move to Try to Tamper Area (Anti-Spoof Ledger)"
+                style={{
+                  padding: '4px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  color: '#d97706',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 600
+                }}
+              >
+                <AlertTriangle size={12} /> Tamper
+              </button>
+
+              <button
+                onClick={() => handleArchive(row)}
+                title="Move to Archive Vault (Preserve record in archive)"
+                style={{
+                  padding: '4px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(147, 51, 234, 0.35)',
+                  background: 'rgba(147, 51, 234, 0.08)',
+                  color: '#9333ea',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 600
+                }}
+              >
+                <Archive size={12} /> Archive
+              </button>
+
+              <button
+                onClick={() => handleOpenBlacklistModal(row)}
+                title="Move Visitor to Security Blacklist"
+                style={{
+                  padding: '4px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 600
+                }}
+              >
+                <ShieldAlert size={12} /> Blacklist
+              </button>
+
+              <button
+                onClick={() => handleDeleteGuest(row, false)}
+                title="Delete Visitor"
+                style={{
+                  padding: '4px 6px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  background: 'rgba(239, 68, 68, 0.05)',
+                  color: '#ef4444',
+                  cursor: 'pointer'
+                }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleRestore(row)}
+                title="Restore back to Active Visitors"
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  color: '#059669',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 700
+                }}
+              >
+                <RotateCcw size={12} /> Restore
+              </button>
+
+              <button
+                onClick={() => handleDeleteGuest(row, true)}
+                title="Permanently Delete from System (Erases all logs/photos)"
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.73rem',
+                  fontWeight: 700
+                }}
+              >
+                <Trash2 size={12} /> Permanent Delete
+              </button>
+            </>
+          )}
         </div>
       )
     }
@@ -746,6 +973,100 @@ export default function GuestsView() {
           </button>
         </div>
       </div>
+
+      {/* Top View Navigation Tabs: Active Ledger vs Archived Vault */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '20px',
+        borderBottom: '1px solid var(--border-color)',
+        paddingBottom: '12px'
+      }}>
+        <button
+          onClick={() => setActiveTab('active')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 20px',
+            borderRadius: '10px',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            border: activeTab === 'active' ? '2px solid #9333ea' : '1px solid var(--border-color)',
+            background: activeTab === 'active' ? 'linear-gradient(135deg, rgba(147, 51, 234, 0.15) 0%, rgba(192, 38, 211, 0.15) 100%)' : 'var(--bg-card)',
+            color: activeTab === 'active' ? '#9333ea' : 'var(--text-muted)',
+            boxShadow: activeTab === 'active' ? '0 4px 12px rgba(147, 51, 234, 0.2)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Users size={17} />
+          Active Visitors & Guests
+          <span style={{
+            background: activeTab === 'active' ? '#9333ea' : 'var(--bg-main)',
+            color: activeTab === 'active' ? '#ffffff' : 'var(--text-muted)',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontSize: '0.75rem',
+            fontWeight: 800
+          }}>
+            {tabCounts.active_count}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('archived')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 20px',
+            borderRadius: '10px',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            border: activeTab === 'archived' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
+            background: activeTab === 'archived' ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(14, 165, 233, 0.15) 100%)' : 'var(--bg-card)',
+            color: activeTab === 'archived' ? '#2563eb' : 'var(--text-muted)',
+            boxShadow: activeTab === 'archived' ? '0 4px 12px rgba(59, 130, 246, 0.2)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Archive size={17} />
+          Archived Visitors Vault
+          <span style={{
+            background: activeTab === 'archived' ? '#2563eb' : 'var(--bg-main)',
+            color: activeTab === 'archived' ? '#ffffff' : 'var(--text-muted)',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontSize: '0.75rem',
+            fontWeight: 800
+          }}>
+            {tabCounts.archived_count}
+          </span>
+        </button>
+      </div>
+
+      {activeTab === 'archived' && (
+        <div style={{
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: '12px',
+          padding: '12px 18px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          fontSize: '0.85rem',
+          color: 'var(--text-main)'
+        }}>
+          <Archive size={20} color="#2563eb" style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Archived Visitors Vault:</strong> These records are preserved safely in archive with their complete movement timeline, snapshots, and full-screen camera scenes. They are excluded from active AI CCTV tracking. To return a visitor to active monitoring, click <strong>Restore</strong>. Deleting any record from this vault will <strong>permanently purge</strong> it from the system.
+          </div>
+        </div>
+      )}
 
       {/* 5 KPI Metric Cards */}
       <div style={{
@@ -1022,6 +1343,129 @@ export default function GuestsView() {
             Showing visitors active between {startDate} and {endDate}
           </div>
         </div>
+
+        {/* Bulk Actions Floating Toolbar */}
+        {selectedGuestIds.length > 0 && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)',
+            border: '1.5px solid #9333ea',
+            borderRadius: '12px',
+            padding: '12px 18px',
+            margin: '14px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 8px 20px -4px rgba(147, 51, 234, 0.15)',
+            animation: 'fadeIn 0.15s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{
+                background: '#9333ea',
+                color: '#ffffff',
+                padding: '3px 10px',
+                borderRadius: '20px',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}>
+                {selectedGuestIds.length} Selected
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                Bulk Actions for selected visitors
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {activeTab === 'active' ? (
+                <>
+                  <button
+                    onClick={() => handleArchive(selectedGuestIds)}
+                    className="btn"
+                    style={{
+                      background: 'rgba(147, 51, 234, 0.15)',
+                      color: '#9333ea',
+                      border: '1px solid rgba(147, 51, 234, 0.35)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Archive size={14} />
+                    Move to Archive
+                  </button>
+
+                  <button
+                    onClick={() => handleMoveToTamper(selectedGuestIds)}
+                    className="btn"
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#d97706',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <AlertTriangle size={14} />
+                    Move to Try to Tamper Area
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteGuest(selectedGuestIds, false)}
+                    className="btn btn-danger"
+                    style={{ fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={14} />
+                    Multiple Delete
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleRestore(selectedGuestIds)}
+                    className="btn"
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#059669',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    Restore to Active
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteGuest(selectedGuestIds, true)}
+                    className="btn btn-danger"
+                    style={{ fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={14} />
+                    Permanently Delete from System
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={handleDeselectAll}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <X size={13} />
+                Deselect
+              </button>
+            </div>
+          </div>
+        )}
 
         <DataTable
           columns={columns}
@@ -1813,9 +2257,10 @@ export default function GuestsView() {
               border: '2px solid rgba(168, 85, 247, 0.4)',
               borderRadius: '20px',
               width: '100%',
-              maxWidth: photoPreview.activeTab === 'full' ? '880px' : '700px',
+              maxWidth: photoPreview.activeTab === 'full' ? '1250px' : '1000px',
+              maxHeight: '92vh',
+              overflowY: 'auto',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 35px rgba(168, 85, 247, 0.25)',
-              overflow: 'hidden',
               animation: 'fadeIn 0.2s ease-out',
               transition: 'max-width 0.25s ease'
             }}
@@ -1990,7 +2435,7 @@ export default function GuestsView() {
 
                   <div style={{
                     width: '100%',
-                    height: '420px',
+                    height: '540px',
                     borderRadius: '12px',
                     overflow: 'hidden',
                     background: '#090d16',
@@ -2080,7 +2525,7 @@ export default function GuestsView() {
                 /* FACE PORTRAIT & PROFILE METADATA VIEW */
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '260px 1fr',
+                  gridTemplateColumns: '320px 1fr',
                   gap: '24px',
                   alignItems: 'start'
                 }}>
@@ -2088,7 +2533,7 @@ export default function GuestsView() {
                   <div>
                     <div style={{
                       width: '100%',
-                      height: '260px',
+                      height: '320px',
                       borderRadius: '14px',
                       overflow: 'hidden',
                       background: '#0f172a',
@@ -2292,6 +2737,80 @@ export default function GuestsView() {
                     <Eye size={13} />
                     View Movement Timeline
                   </button>
+
+                  <button
+                    onClick={() => {
+                      const g = photoPreview.guest;
+                      setPhotoPreview(null);
+                      handleMoveToTamper(g);
+                    }}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      background: 'rgba(245, 158, 11, 0.08)',
+                      color: '#d97706',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <AlertTriangle size={13} />
+                    Move to Tamper Area
+                  </button>
+
+                  {activeTab === 'active' ? (
+                    <button
+                      onClick={() => {
+                        const g = photoPreview.guest;
+                        setPhotoPreview(null);
+                        handleArchive(g);
+                      }}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(147, 51, 234, 0.35)',
+                        background: 'rgba(147, 51, 234, 0.08)',
+                        color: '#9333ea',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      <Archive size={13} />
+                      Move to Archive
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const g = photoPreview.guest;
+                        setPhotoPreview(null);
+                        handleRestore(g);
+                      }}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        color: '#059669',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '0.82rem',
+                        fontWeight: 700
+                      }}
+                    >
+                      <RotateCcw size={13} />
+                      Restore to Active
+                    </button>
+                  )}
 
                   <button
                     onClick={() => {

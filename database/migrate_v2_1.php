@@ -64,6 +64,23 @@ try {
         echo "✓ Column 'latest_full_photo' already exists in 'guests'.\n";
     }
 
+    // Add is_archived and archived_at to guests for Archive Vault
+    $colsG3 = $db->query("SHOW COLUMNS FROM `guests` LIKE 'is_archived'")->fetchAll();
+    if (empty($colsG3)) {
+        $db->exec("ALTER TABLE `guests` ADD COLUMN `is_archived` TINYINT(1) DEFAULT 0 AFTER `current_status`, ADD INDEX `idx_gst_archived` (`is_archived`)");
+        echo "✓ Column 'is_archived' added to 'guests'.\n";
+    } else {
+        echo "✓ Column 'is_archived' already exists in 'guests'.\n";
+    }
+
+    $colsG4 = $db->query("SHOW COLUMNS FROM `guests` LIKE 'archived_at'")->fetchAll();
+    if (empty($colsG4)) {
+        $db->exec("ALTER TABLE `guests` ADD COLUMN `archived_at` DATETIME NULL AFTER `is_archived`");
+        echo "✓ Column 'archived_at' added to 'guests'.\n";
+    } else {
+        echo "✓ Column 'archived_at' already exists in 'guests'.\n";
+    }
+
 } catch (Exception $e) {
     echo "Migration failed: " . $e->getMessage() . "\n";
     exit(1);

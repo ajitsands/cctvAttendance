@@ -20,12 +20,12 @@ function notifyFaceEngineReloadBlacklist() {
 }
 
 if ($method === 'GET') {
-    // Action: Sync embeddings for Python AI Engine
+    // Action: Sync embeddings for Python AI Engine (Only active, non-archived guests)
     if (($_GET['action'] ?? '') === 'sync_embeddings') {
         $stmt = $db->query("
             SELECT id, guest_code, guest_name, guest_type, face_embedding 
             FROM guests 
-            WHERE face_embedding IS NOT NULL AND face_embedding != ''
+            WHERE face_embedding IS NOT NULL AND face_embedding != '' AND COALESCE(is_archived, 0) = 0
         ");
         jsonResponse($stmt->fetchAll());
     }
@@ -61,12 +61,13 @@ if ($method === 'GET') {
         jsonResponse($guest);
     }
 
-    // 2. Fetch list of guests with date range and classification filters
-    $startDate = $_GET['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
-    $endDate   = $_GET['end_date'] ?? date('Y-m-d');
-    $guestType = $_GET['guest_type'] ?? '';
-    $status    = $_GET['status'] ?? ''; // INSIDE or OUTSIDE
-    $search    = $_GET['search'] ?? '';
+    // 2. Fetch list of guests with date range, classification and archive filters
+    $startDate  = $_GET['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
+    $endDate    = $_GET['end_date'] ?? date('Y-m-d');
+    $guestType  = $_GET['guest_type'] ?? '';
+    $status     = $_GET['status'] ?? ''; // INSIDE or OUTSIDE
+    $search     = $_GET['search'] ?? '';
+    $isArchived = isset($_GET['is_archived']) && ($_GET['is_archived'] === '1' || $_GET['is_archived'] === 'true') ? 1 : 0;
 
     $sql = "
         SELECT g.*,
@@ -76,9 +77,11 @@ if ($method === 'GET') {
                    ELSE 0 
                END as avg_visit_minutes
         FROM guests g
-        WHERE 1=1
+        WHERE COALESCE(g.is_archived, 0) = :is_archived
     ";
-    $params = [];
+    $params = [
+        ':is_archived' => $isArchived
+    ];
 
     // Filter by date range (guests seen between dates)
     if (!empty($startDate) && !empty($endDate)) {
@@ -124,13 +127,27 @@ if ($method === 'GET') {
     $totalHoursSum = round($totalInsideMinutesSum / 60, 2);
     $overallAvgVisitMinutes = $totalVisitsSum > 0 ? (int)round($totalInsideMinutesSum / $totalVisitsSum) : 0;
 
+    // Count active vs archived across the entire system
+    $countsStmt = $db->query("
+        SELECT 
+            COUNT(CASE WHEN COALESCE(is_archived, 0) = 0 THEN 1 END) as active_count,
+            COUNT(CASE WHEN COALESCE(is_archived, 0) = 1 THEN 1 END) as archived_count
+        FROM guests
+    ");
+    $tabCounts = $countsStmt->fetch(PDO::FETCH_ASSOC) ?: ['active_count' => 0, 'archived_count' => 0];
+
     jsonResponse([
         'filter' => [
             'start_date' => $startDate,
             'end_date' => $endDate,
             'guest_type' => $guestType,
             'status' => $status,
-            'search' => $search
+            'search' => $search,
+            'is_archived' => $isArchived
+        ],
+        'counts' => [
+            'active_count' => (int)$tabCounts['active_count'],
+            'archived_count' => (int)$tabCounts['archived_count']
         ],
         'totals' => [
             'total_guests' => $totalGuestsCount,
@@ -452,6 +469,134 @@ if ($method === 'POST') {
             'full_name' => $guest['guest_name'],
             'message' => "Visitor {$guest['guest_name']} ({$personCode}) successfully moved to Security Blacklist."
         ], 200);
+    }
+
+    // Action: Move Visitor(s) to Archive Vault
+    if ($action === 'archive') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $ids = $input['guest_ids'] ?? [];
+        if (!empty($input['guest_id'])) {
+            $ids[] = (int)$input['guest_id'];
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No visitors selected to archive', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE guests SET is_archived = 1, archived_at = NOW() WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        notifyFaceEngineReloadGuests();
+        jsonResponse([
+            'success' => true,
+            'archived_count' => $count,
+            'message' => "Successfully moved {$count} visitor(s) to Archive Vault."
+        ]);
+    }
+
+    // Action: Restore Visitor(s) from Archive back to Active
+    if ($action === 'restore') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $ids = $input['guest_ids'] ?? [];
+        if (!empty($input['guest_id'])) {
+            $ids[] = (int)$input['guest_id'];
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No visitors selected to restore', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE guests SET is_archived = 0, archived_at = NULL WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        notifyFaceEngineReloadGuests();
+        jsonResponse([
+            'success' => true,
+            'restored_count' => $count,
+            'message' => "Successfully restored {$count} visitor(s) back to Active Visitors."
+        ]);
+    }
+
+    // Action: Bulk Delete Visitor(s) permanently
+    if ($action === 'bulk_delete') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $ids = $input['guest_ids'] ?? [];
+        if (!empty($input['guest_id'])) {
+            $ids[] = (int)$input['guest_id'];
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No visitors selected to delete', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("DELETE FROM guests WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        notifyFaceEngineReloadGuests();
+        jsonResponse([
+            'success' => true,
+            'deleted_count' => $count,
+            'message' => "Permanently deleted {$count} visitor record(s) from the system."
+        ]);
+    }
+
+    // Action: Move Visitor(s) to Try to Tamper Area (Anti-Spoof & Tamper Ledger)
+    if ($action === 'move_to_tamper') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $ids = $input['guest_ids'] ?? [];
+        if (!empty($input['guest_id'])) {
+            $ids[] = (int)$input['guest_id'];
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No visitors selected to move to Tamper Area', 400);
+        }
+
+        $reason = trim($input['reason'] ?? 'Manual Flagged Visitor / Tamper Investigation');
+        $eventType = trim($input['event_type'] ?? 'Manual Flagged Visitor / Tamper Investigation');
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $fetchStmt = $db->prepare("SELECT id, guest_code, guest_name, first_photo, latest_photo, first_full_photo, latest_full_photo, last_seen_at FROM guests WHERE id IN ($placeholders)");
+        $fetchStmt->execute($ids);
+        $targetGuests = $fetchStmt->fetchAll();
+
+        $insertedCount = 0;
+        $tamperInsert = $db->prepare("
+            INSERT INTO tamper_logs 
+            (target_name, target_code, event_type, reason, snapshot_path, detected_at, is_reviewed)
+            VALUES (:tname, :tcode, :etype, :reason, :snap, :det, 0)
+        ");
+
+        foreach ($targetGuests as $tg) {
+            $snap = $tg['latest_full_photo'] ?: ($tg['first_full_photo'] ?: ($tg['latest_photo'] ?: ($tg['first_photo'] ?: '')));
+            $detectedAt = $tg['last_seen_at'] ?: date('Y-m-d H:i:s');
+
+            $tamperInsert->execute([
+                ':tname' => $tg['guest_name'],
+                ':tcode' => $tg['guest_code'],
+                ':etype' => $eventType,
+                ':reason' => $reason,
+                ':snap' => $snap,
+                ':det' => $detectedAt
+            ]);
+            $insertedCount++;
+        }
+
+        jsonResponse([
+            'success' => true,
+            'moved_count' => $insertedCount,
+            'message' => "Successfully moved {$insertedCount} visitor(s) to Try to Tamper Area audit trail."
+        ]);
     }
 
     jsonError('Unsupported POST action', 400);
