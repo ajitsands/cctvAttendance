@@ -26,7 +26,10 @@ import {
   Shield,
   ShieldAlert,
   Layers,
-  RotateCcw
+  RotateCcw,
+  Camera,
+  Maximize2,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
@@ -85,17 +88,25 @@ export default function GuestsView() {
   const [blacklistMessage, setBlacklistMessage] = useState({ type: '', text: '' });
 
   // Photo Preview Lightbox Modal State
-  const [photoPreview, setPhotoPreview] = useState(null); // { guest, photoUrl }
+  const [photoPreview, setPhotoPreview] = useState(null); // { guest, photoUrl, fullPhotoUrl, activeTab: 'face' | 'full' }
 
-  const handlePreviewPhoto = (guest, customPhotoUrl = null) => {
+  const handlePreviewPhoto = (guest, customPhotoUrl = null, customFullPhotoUrl = null, defaultTab = 'face') => {
     if (!guest) return;
     const photo = customPhotoUrl || guest.latest_photo || guest.first_photo;
-    const resolved = photo
+    const resolvedPhoto = photo
       ? (photo.startsWith('http') || photo.startsWith('data:') ? photo : `http://127.0.0.1:8000${photo.startsWith('/') ? '' : '/'}${photo}`)
       : null;
+
+    const fullPhoto = customFullPhotoUrl || guest.latest_full_photo || guest.first_full_photo;
+    const resolvedFull = fullPhoto
+      ? (fullPhoto.startsWith('http') || fullPhoto.startsWith('data:') ? fullPhoto : `http://127.0.0.1:8000${fullPhoto.startsWith('/') ? '' : '/'}${fullPhoto}`)
+      : null;
+
     setPhotoPreview({
       guest,
-      photoUrl: resolved
+      photoUrl: resolvedPhoto,
+      fullPhotoUrl: resolvedFull,
+      activeTab: defaultTab === 'full' && resolvedFull ? 'full' : 'face'
     });
   };
 
@@ -339,10 +350,14 @@ export default function GuestsView() {
         const resolvedPhoto = photo
           ? (photo.startsWith('http') || photo.startsWith('data:') ? photo : `http://127.0.0.1:8000${photo.startsWith('/') ? '' : '/'}${photo}`)
           : null;
+        const fullPhoto = row.latest_full_photo || row.first_full_photo;
+        const resolvedFullPhoto = fullPhoto
+          ? (fullPhoto.startsWith('http') || fullPhoto.startsWith('data:') ? fullPhoto : `http://127.0.0.1:8000${fullPhoto.startsWith('/') ? '' : '/'}${fullPhoto}`)
+          : null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div 
-              onClick={() => handlePreviewPhoto(row, resolvedPhoto)}
+              onClick={() => handlePreviewPhoto(row, resolvedPhoto, resolvedFullPhoto, 'face')}
               title="Click to view full-size photo & visitor details"
               style={{
                 width: '46px',
@@ -375,14 +390,41 @@ export default function GuestsView() {
             </div>
             <div>
               <div 
-                onClick={() => handlePreviewPhoto(row, resolvedPhoto)}
+                onClick={() => handlePreviewPhoto(row, resolvedPhoto, resolvedFullPhoto, 'face')}
                 style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-main)', cursor: 'pointer' }}
                 title="Click to view details"
               >
                 {row.guest_code}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Auto-Enrolled AI
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Auto-Enrolled AI
+                </span>
+                {resolvedFullPhoto && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePreviewPhoto(row, resolvedPhoto, resolvedFullPhoto, 'full');
+                    }}
+                    title="View Full CCTV Frame (Group / Surroundings)"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(59, 130, 246, 0.35)',
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      color: '#2563eb',
+                      fontSize: '0.66rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Camera size={10} />
+                    Scene
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1154,33 +1196,138 @@ export default function GuestsView() {
                           border: `1px solid ${isEntry ? 'rgba(16, 185, 129, 0.2)' : 'rgba(234, 88, 12, 0.2)'}`
                         }}
                       >
-                        {/* Event Snapshot */}
-                        <div 
-                          onClick={() => handlePreviewPhoto(selectedGuestTimeline, log.snapshot_path ? `http://127.0.0.1:8000${log.snapshot_path}` : null)}
-                          title="Click to enlarge snapshot & view profile"
-                          style={{
-                            width: '54px',
-                            height: '54px',
-                            borderRadius: '8px',
-                            overflow: 'hidden',
-                            background: '#000',
-                            flexShrink: 0,
-                            border: '1px solid var(--border-color)',
-                            cursor: 'pointer',
-                            transition: 'transform 0.15s'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                        >
-                          {log.snapshot_path ? (
-                            <img
-                              src={`http://127.0.0.1:8000${log.snapshot_path}`}
-                              alt="Log Snapshot"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            />
+                        {/* Event Snapshots: Face Portrait & Full Camera Group Frame */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          {/* Face Crop Thumbnail */}
+                          <div 
+                            onClick={() => handlePreviewPhoto(
+                              selectedGuestTimeline, 
+                              log.snapshot_path ? `http://127.0.0.1:8000${log.snapshot_path}` : null,
+                              log.full_snapshot_path ? `http://127.0.0.1:8000${log.full_snapshot_path}` : null,
+                              'face'
+                            )}
+                            title="Click to enlarge visitor face crop"
+                            style={{
+                              width: '54px',
+                              height: '54px',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              background: '#000',
+                              flexShrink: 0,
+                              border: '1.5px solid var(--border-color)',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'transform 0.15s, border-color 0.15s'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.borderColor = '#9333ea'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = 'var(--border-color)'; }}
+                          >
+                            {log.snapshot_path ? (
+                              <img
+                                src={`http://127.0.0.1:8000${log.snapshot_path}`}
+                                alt="Face Snapshot"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                                <Users size={18} />
+                              </div>
+                            )}
+                            <span style={{
+                              position: 'absolute',
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              background: 'rgba(0,0,0,0.75)',
+                              color: '#ffffff',
+                              fontSize: '0.58rem',
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              padding: '1px 0'
+                            }}>
+                              FACE
+                            </span>
+                          </div>
+
+                          {/* Full Screen Shot Thumbnail (Group Context) */}
+                          {log.full_snapshot_path ? (
+                            <div 
+                              onClick={() => handlePreviewPhoto(
+                                selectedGuestTimeline, 
+                                log.snapshot_path ? `http://127.0.0.1:8000${log.snapshot_path}` : null,
+                                `http://127.0.0.1:8000${log.full_snapshot_path}`,
+                                'full'
+                              )}
+                              title="Click to inspect full camera scene & companions (Group / Alone)"
+                              style={{
+                                width: '90px',
+                                height: '54px',
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                background: '#0f172a',
+                                flexShrink: 0,
+                                border: '1.5px solid rgba(59, 130, 246, 0.45)',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                                transition: 'transform 0.15s, border-color 0.15s'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.borderColor = '#2563eb'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.45)'; }}
+                            >
+                              <img
+                                src={`http://127.0.0.1:8000${log.full_snapshot_path}`}
+                                alt="Full Scene Snapshot"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                              <span style={{
+                                position: 'absolute',
+                                top: '2px',
+                                right: '2px',
+                                background: '#2563eb',
+                                color: '#ffffff',
+                                fontSize: '0.55rem',
+                                fontWeight: 800,
+                                padding: '1px 4px',
+                                borderRadius: '3px',
+                                letterSpacing: '0.03em'
+                              }}>
+                                GROUP
+                              </span>
+                              <span style={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                background: 'rgba(0,0,0,0.75)',
+                                color: '#38bdf8',
+                                fontSize: '0.58rem',
+                                fontWeight: 700,
+                                textAlign: 'center',
+                                padding: '1px 0'
+                              }}>
+                                FULL SCENE
+                              </span>
+                            </div>
                           ) : (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                              <Users size={18} />
+                            <div 
+                              title="No full CCTV frame captured for this event"
+                              style={{
+                                width: '64px',
+                                height: '54px',
+                                borderRadius: '8px',
+                                border: '1px dashed var(--border-color)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--text-muted)',
+                                fontSize: '0.6rem',
+                                flexShrink: 0
+                              }}
+                            >
+                              <Camera size={13} style={{ opacity: 0.35, marginBottom: '2px' }} />
+                              <span>No Scene</span>
                             </div>
                           )}
                         </div>
@@ -1666,10 +1813,11 @@ export default function GuestsView() {
               border: '2px solid rgba(168, 85, 247, 0.4)',
               borderRadius: '20px',
               width: '100%',
-              maxWidth: '680px',
+              maxWidth: photoPreview.activeTab === 'full' ? '880px' : '700px',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 35px rgba(168, 85, 247, 0.25)',
               overflow: 'hidden',
-              animation: 'fadeIn 0.2s ease-out'
+              animation: 'fadeIn 0.2s ease-out',
+              transition: 'max-width 0.25s ease'
             }}
           >
             {/* Header */}
@@ -1722,183 +1870,390 @@ export default function GuestsView() {
               </button>
             </div>
 
-            {/* Modal Body: Portrait + Bio Data */}
-            <div style={{ padding: '24px' }}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '260px 1fr',
-                gap: '24px',
-                alignItems: 'start'
-              }}>
-                {/* Left: Enlarged Photo Card */}
+            {/* TAB TOGGLE: Face Portrait vs Full Camera Scene (Group / Alone) */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '1px solid var(--border-color)',
+              background: 'var(--bg-muted)',
+              padding: '8px 20px',
+              gap: '10px'
+            }}>
+              <button
+                onClick={() => setPhotoPreview(prev => ({ ...prev, activeTab: 'face' }))}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: photoPreview.activeTab === 'face' ? '1px solid #9333ea' : '1px solid transparent',
+                  background: photoPreview.activeTab === 'face' ? 'rgba(147, 51, 234, 0.15)' : 'transparent',
+                  color: photoPreview.activeTab === 'face' ? '#9333ea' : 'var(--text-muted)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Users size={15} />
+                Face Portrait Crop
+              </button>
+
+              <button
+                onClick={() => {
+                  if (photoPreview.fullPhotoUrl) {
+                    setPhotoPreview(prev => ({ ...prev, activeTab: 'full' }));
+                  }
+                }}
+                disabled={!photoPreview.fullPhotoUrl}
+                title={photoPreview.fullPhotoUrl ? "Inspect full CCTV wide-angle scene & accompanying group members" : "No full camera snapshot available for this visit event"}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: photoPreview.fullPhotoUrl ? 'pointer' : 'not-allowed',
+                  opacity: photoPreview.fullPhotoUrl ? 1 : 0.5,
+                  border: photoPreview.activeTab === 'full' ? '1px solid #2563eb' : '1px solid transparent',
+                  background: photoPreview.activeTab === 'full' ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+                  color: photoPreview.activeTab === 'full' ? '#2563eb' : 'var(--text-muted)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Camera size={15} />
+                Full Camera Scene (Group / Co-Visitors)
+                {photoPreview.fullPhotoUrl ? (
+                  <span style={{
+                    fontSize: '0.65rem',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    padding: '1px 6px',
+                    borderRadius: '10px'
+                  }}>
+                    Available
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
+                    (N/A)
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '22px' }}>
+              {photoPreview.activeTab === 'full' ? (
+                /* FULL CAMERA SCENE VIEW (Group identification mode) */
                 <div>
                   <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '12px',
+                    background: 'rgba(37, 99, 235, 0.08)',
+                    border: '1px solid rgba(37, 99, 235, 0.25)',
+                    borderRadius: '10px',
+                    padding: '8px 14px'
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#2563eb' }}>
+                        Wide-Angle CCTV Surveillance Scene
+                      </span>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                        Inspect who all arrived together with this visitor (group, companion, or alone).
+                      </p>
+                    </div>
+
+                    {photoPreview.fullPhotoUrl && (
+                      <a
+                        href={photoPreview.fullPhotoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary"
+                        style={{
+                          fontSize: '0.75rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '5px 10px',
+                          flexShrink: 0
+                        }}
+                      >
+                        <ExternalLink size={12} />
+                        Open High-Res
+                      </a>
+                    )}
+                  </div>
+
+                  <div style={{
                     width: '100%',
-                    height: '260px',
-                    borderRadius: '14px',
+                    height: '420px',
+                    borderRadius: '12px',
                     overflow: 'hidden',
-                    background: '#0f172a',
-                    border: '2px solid rgba(168, 85, 247, 0.35)',
-                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
+                    background: '#090d16',
+                    border: '2px solid rgba(59, 130, 246, 0.35)',
+                    boxShadow: '0 12px 30px -5px rgba(0,0,0,0.5)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'relative'
                   }}>
-                    {photoPreview.photoUrl ? (
+                    {photoPreview.fullPhotoUrl ? (
                       <img
-                        src={photoPreview.photoUrl}
-                        alt={photoPreview.guest.guest_name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        src={photoPreview.fullPhotoUrl}
+                        alt="Full Camera Scene"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                       />
                     ) : (
                       <div style={{ textAlign: 'center', color: '#94a3b8' }}>
-                        <Users size={48} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                        <div style={{ fontSize: '0.85rem' }}>No Snapshot Captured</div>
+                        <Camera size={48} style={{ opacity: 0.4, marginBottom: '8px' }} />
+                        <div style={{ fontSize: '0.85rem' }}>No Full Camera Screenshot Available</div>
                       </div>
                     )}
+
                     <div style={{
                       position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      padding: '8px',
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)',
+                      top: '12px',
+                      left: '12px',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      backdropFilter: 'blur(4px)',
                       color: '#ffffff',
                       fontSize: '0.72rem',
-                      textAlign: 'center',
-                      fontWeight: 600
-                    }}>
-                      CCTV Live Facial Biometric Capture
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Security ID: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{photoPreview.guest.guest_code}</strong>
-                  </div>
-                </div>
-
-                {/* Right: Detailed Visitor Metadata */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
-                      {photoPreview.guest.guest_name}
-                    </h2>
-                    {/^V\d{6}$/i.test(photoPreview.guest.guest_name) && (
-                      <span style={{
-                        fontSize: '0.7rem',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        background: 'rgba(59, 130, 246, 0.12)',
-                        color: '#2563eb',
-                        fontWeight: 700,
-                        border: '1px solid rgba(59, 130, 246, 0.3)'
-                      }}>
-                        Auto V-ID
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Badges */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '3px 10px',
-                      borderRadius: '12px',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      ...getBadgeStyle(photoPreview.guest.guest_type)
-                    }}>
-                      <Tag size={12} />
-                      {photoPreview.guest.guest_type || 'Visitor'}
-                    </span>
-
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '3px 10px',
-                      borderRadius: '14px',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      background: photoPreview.guest.current_status === 'INSIDE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.1)',
-                      color: photoPreview.guest.current_status === 'INSIDE' ? '#059669' : '#64748b',
-                      border: photoPreview.guest.current_status === 'INSIDE' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.2)'
-                    }}>
-                      <span style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        background: photoPreview.guest.current_status === 'INSIDE' ? '#10b981' : '#94a3b8',
-                        boxShadow: photoPreview.guest.current_status === 'INSIDE' ? '0 0 6px #10b981' : 'none'
-                      }} />
-                      {photoPreview.guest.current_status || 'INSIDE'}
-                    </span>
-
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '3px 10px',
-                      borderRadius: '12px',
-                      fontSize: '0.78rem',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
                       fontWeight: 700,
-                      background: 'rgba(37, 99, 235, 0.1)',
-                      color: '#2563eb'
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}>
-                      {photoPreview.guest.total_visits || 1} Visits Recorded
-                    </span>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
+                      Full Raw Frame (Clean Surveillance Capture)
+                    </div>
                   </div>
 
-                  {/* Metadata Grid */}
+                  {/* Summary Bar */}
                   <div style={{
+                    marginTop: '12px',
+                    padding: '10px 14px',
                     background: 'var(--bg-muted)',
-                    borderRadius: '12px',
-                    padding: '14px',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr',
-                    gap: '10px',
-                    fontSize: '0.82rem',
+                    borderRadius: '10px',
                     border: '1px solid var(--border-color)',
-                    marginBottom: '16px'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                    fontSize: '0.8rem'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Organization / Company:</span>
-                      <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.company_name || 'Not Assigned'}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Identified Person:</span>
+                      <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.guest_name}</strong>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>({photoPreview.guest.guest_code})</span>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Contact Phone:</span>
-                      <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.phone || 'Not Assigned'}</strong>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>First Detected:</span>
-                      <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
-                        {photoPreview.guest.first_seen_at || 'N/A'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Classification:</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        fontSize: '0.74rem',
+                        ...getBadgeStyle(photoPreview.guest.guest_type)
+                      }}>
+                        {photoPreview.guest.guest_type || 'Visitor'}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Last Detected:</span>
-                      <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Last Seen:</span>
+                      <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
                         {photoPreview.guest.last_seen_at || 'N/A'}
                       </span>
                     </div>
-
-                    {photoPreview.guest.notes && (
-                      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', marginTop: '2px' }}>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Security Notes:</span>
-                        <div style={{ color: 'var(--text-main)', fontStyle: 'italic' }}>
-                          "{photoPreview.guest.notes}"
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
-              </div>
+              ) : (
+                /* FACE PORTRAIT & PROFILE METADATA VIEW */
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '260px 1fr',
+                  gap: '24px',
+                  alignItems: 'start'
+                }}>
+                  {/* Left: Enlarged Photo Card */}
+                  <div>
+                    <div style={{
+                      width: '100%',
+                      height: '260px',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      background: '#0f172a',
+                      border: '2px solid rgba(168, 85, 247, 0.35)',
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative'
+                    }}>
+                      {photoPreview.photoUrl ? (
+                        <img
+                          src={photoPreview.photoUrl}
+                          alt={photoPreview.guest.guest_name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+                          <Users size={48} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                          <div style={{ fontSize: '0.85rem' }}>No Snapshot Captured</div>
+                        </div>
+                      )}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        padding: '8px',
+                        background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)',
+                        color: '#ffffff',
+                        fontSize: '0.72rem',
+                        textAlign: 'center',
+                        fontWeight: 600
+                      }}>
+                        CCTV Live Facial Biometric Capture
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Security ID: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{photoPreview.guest.guest_code}</strong>
+                    </div>
+                  </div>
+
+                  {/* Right: Detailed Visitor Metadata */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                        {photoPreview.guest.guest_name}
+                      </h2>
+                      {/^V\d{6}$/i.test(photoPreview.guest.guest_name) && (
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: 'rgba(59, 130, 246, 0.12)',
+                          color: '#2563eb',
+                          fontWeight: 700,
+                          border: '1px solid rgba(59, 130, 246, 0.3)'
+                        }}>
+                          Auto V-ID
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Badges */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '3px 10px',
+                        borderRadius: '12px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        ...getBadgeStyle(photoPreview.guest.guest_type)
+                      }}>
+                        <Tag size={12} />
+                        {photoPreview.guest.guest_type || 'Visitor'}
+                      </span>
+
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '3px 10px',
+                        borderRadius: '14px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        background: photoPreview.guest.current_status === 'INSIDE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.1)',
+                        color: photoPreview.guest.current_status === 'INSIDE' ? '#059669' : '#64748b',
+                        border: photoPreview.guest.current_status === 'INSIDE' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.2)'
+                      }}>
+                        <span style={{
+                          width: '7px',
+                          height: '7px',
+                          borderRadius: '50%',
+                          background: photoPreview.guest.current_status === 'INSIDE' ? '#10b981' : '#94a3b8',
+                          boxShadow: photoPreview.guest.current_status === 'INSIDE' ? '0 0 6px #10b981' : 'none'
+                        }} />
+                        {photoPreview.guest.current_status || 'INSIDE'}
+                      </span>
+
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '3px 10px',
+                        borderRadius: '12px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        background: 'rgba(37, 99, 235, 0.1)',
+                        color: '#2563eb'
+                      }}>
+                        {photoPreview.guest.total_visits || 1} Visits Recorded
+                      </span>
+                    </div>
+
+                    {/* Metadata Grid */}
+                    <div style={{
+                      background: 'var(--bg-muted)',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr',
+                      gap: '10px',
+                      fontSize: '0.82rem',
+                      border: '1px solid var(--border-color)',
+                      marginBottom: '16px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Organization / Company:</span>
+                        <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.company_name || 'Not Assigned'}</strong>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Contact Phone:</span>
+                        <strong style={{ color: 'var(--text-main)' }}>{photoPreview.guest.phone || 'Not Assigned'}</strong>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>First Detected:</span>
+                        <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                          {photoPreview.guest.first_seen_at || 'N/A'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Last Detected:</span>
+                        <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                          {photoPreview.guest.last_seen_at || 'N/A'}
+                        </span>
+                      </div>
+
+                      {photoPreview.guest.notes && (
+                        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', marginTop: '2px' }}>
+                          <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Security Notes:</span>
+                          <div style={{ color: 'var(--text-main)', fontStyle: 'italic' }}>
+                            "{photoPreview.guest.notes}"
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div style={{

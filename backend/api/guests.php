@@ -155,21 +155,22 @@ if ($method === 'POST') {
         $direction = $input['direction'] ?? 'IN';
         $confidence = (float)($input['confidence_score'] ?? 0.0);
         $snapshot = $input['snapshot'] ?? null;
+        $fullSnapshot = $input['full_snapshot'] ?? null;
         $embedding = $input['face_embedding'] ?? null;
 
-        // Save snapshot if provided
+        // Save face portrait snapshot if provided
         $snapshotPath = null;
-        if (!empty($snapshot)) {
-            $backendUploadDir = __DIR__ . '/../uploads/guests';
-            $frontendUploadDir = __DIR__ . '/../../frontend/public/uploads/guests';
-            $rootUploadDir = __DIR__ . '/../../uploads/guests';
+        $backendUploadDir = __DIR__ . '/../uploads/guests';
+        $frontendUploadDir = __DIR__ . '/../../frontend/public/uploads/guests';
+        $rootUploadDir = __DIR__ . '/../../uploads/guests';
 
-            foreach ([$backendUploadDir, $frontendUploadDir, $rootUploadDir] as $dir) {
-                if (!is_dir($dir)) {
-                    @mkdir($dir, 0777, true);
-                }
+        foreach ([$backendUploadDir, $frontendUploadDir, $rootUploadDir] as $dir) {
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
             }
+        }
 
+        if (!empty($snapshot)) {
             $filename = 'guest_' . time() . '_' . rand(100, 999) . '.jpg';
             $decoded = false;
             if (strpos($snapshot, ',') !== false) {
@@ -184,6 +185,26 @@ if ($method === 'POST') {
                 @file_put_contents($frontendUploadDir . '/' . $filename, $decoded);
                 @file_put_contents($rootUploadDir . '/' . $filename, $decoded);
                 $snapshotPath = '/uploads/guests/' . $filename;
+            }
+        }
+
+        // Save full-screen camera snapshot (group arrival / co-visitor identification) if provided
+        $fullSnapshotPath = null;
+        if (!empty($fullSnapshot)) {
+            $fullFilename = 'guest_full_' . time() . '_' . rand(100, 999) . '.jpg';
+            $fullDecoded = false;
+            if (strpos($fullSnapshot, ',') !== false) {
+                $fData = substr($fullSnapshot, strpos($fullSnapshot, ',') + 1);
+                $fullDecoded = base64_decode($fData);
+            } else {
+                $fullDecoded = base64_decode($fullSnapshot);
+            }
+
+            if ($fullDecoded) {
+                @file_put_contents($backendUploadDir . '/' . $fullFilename, $fullDecoded);
+                @file_put_contents($frontendUploadDir . '/' . $fullFilename, $fullDecoded);
+                @file_put_contents($rootUploadDir . '/' . $fullFilename, $fullDecoded);
+                $fullSnapshotPath = '/uploads/guests/' . $fullFilename;
             }
         }
 
@@ -231,11 +252,13 @@ if ($method === 'POST') {
                         SET current_status = 'OUTSIDE', 
                             total_inside_minutes = total_inside_minutes + :dur,
                             latest_photo = COALESCE(:photo, latest_photo),
+                            latest_full_photo = COALESCE(:full_photo, latest_full_photo),
                             last_seen_at = :now
                         WHERE id = :id
                     ")->execute([
                         ':dur' => $durationMinutes,
                         ':photo' => $snapshotPath,
+                        ':full_photo' => $fullSnapshotPath,
                         ':now' => $now,
                         ':id' => $guestId
                     ]);
@@ -246,20 +269,22 @@ if ($method === 'POST') {
                         SET current_status = 'INSIDE', 
                             total_visits = total_visits + 1,
                             latest_photo = COALESCE(:photo, latest_photo),
+                            latest_full_photo = COALESCE(:full_photo, latest_full_photo),
                             last_seen_at = :now
                         WHERE id = :id
                     ")->execute([
                         ':photo' => $snapshotPath,
+                        ':full_photo' => $fullSnapshotPath,
                         ':now' => $now,
                         ':id' => $guestId
                     ]);
                 }
 
-                // Log movement event
+                // Log movement event with both face snapshot and full camera screen shot
                 $db->prepare("
                     INSERT INTO guest_logs 
-                    (guest_id, camera_id, direction, gate_name, punch_time, punch_date, duration_minutes, confidence_score, snapshot_path)
-                    VALUES (:gid, :cid, :dir, :gate, :time, :date, :dur, :conf, :snap)
+                    (guest_id, camera_id, direction, gate_name, punch_time, punch_date, duration_minutes, confidence_score, snapshot_path, full_snapshot_path)
+                    VALUES (:gid, :cid, :dir, :gate, :time, :date, :dur, :conf, :snap, :full_snap)
                 ")->execute([
                     ':gid' => $guestId,
                     ':cid' => $validCameraId,
@@ -269,7 +294,8 @@ if ($method === 'POST') {
                     ':date' => $today,
                     ':dur' => $durationMinutes,
                     ':conf' => $confidence,
-                    ':snap' => $snapshotPath
+                    ':snap' => $snapshotPath,
+                    ':full_snap' => $fullSnapshotPath
                 ]);
 
                 jsonResponse([
@@ -277,7 +303,9 @@ if ($method === 'POST') {
                     'is_new' => false,
                     'guest_id' => $guestId,
                     'guest_code' => $guest['guest_code'],
-                    'duration_minutes' => $durationMinutes
+                    'duration_minutes' => $durationMinutes,
+                    'snapshot_path' => $snapshotPath,
+                    'full_snapshot_path' => $fullSnapshotPath
                 ]);
             }
         }
@@ -300,13 +328,15 @@ if ($method === 'POST') {
 
         $db->prepare("
             INSERT INTO guests 
-            (guest_code, guest_name, guest_type, first_photo, latest_photo, face_embedding, total_visits, total_inside_minutes, current_status, first_seen_at, last_seen_at)
-            VALUES (:code, :name, 'Visitor', :p1, :p2, :emb, 1, 0, :status, :seen1, :seen2)
+            (guest_code, guest_name, guest_type, first_photo, latest_photo, first_full_photo, latest_full_photo, face_embedding, total_visits, total_inside_minutes, current_status, first_seen_at, last_seen_at)
+            VALUES (:code, :name, 'Visitor', :p1, :p2, :fp1, :fp2, :emb, 1, 0, :status, :seen1, :seen2)
         ")->execute([
             ':code' => $guestCode,
             ':name' => $guestName,
             ':p1' => $snapshotPath,
             ':p2' => $snapshotPath,
+            ':fp1' => $fullSnapshotPath,
+            ':fp2' => $fullSnapshotPath,
             ':emb' => $embJson,
             ':status' => ($direction === 'OUT' ? 'OUTSIDE' : 'INSIDE'),
             ':seen1' => $now,
@@ -317,8 +347,8 @@ if ($method === 'POST') {
 
         $db->prepare("
             INSERT INTO guest_logs 
-            (guest_id, camera_id, direction, gate_name, punch_time, punch_date, duration_minutes, confidence_score, snapshot_path)
-            VALUES (:gid, :cid, :dir, :gate, :time, :date, 0, :conf, :snap)
+            (guest_id, camera_id, direction, gate_name, punch_time, punch_date, duration_minutes, confidence_score, snapshot_path, full_snapshot_path)
+            VALUES (:gid, :cid, :dir, :gate, :time, :date, 0, :conf, :snap, :full_snap)
         ")->execute([
             ':gid' => $newGuestId,
             ':cid' => $validCameraId,
@@ -327,7 +357,8 @@ if ($method === 'POST') {
             ':time' => $now,
             ':date' => $today,
             ':conf' => $confidence,
-            ':snap' => $snapshotPath
+            ':snap' => $snapshotPath,
+            ':full_snap' => $fullSnapshotPath
         ]);
 
         notifyFaceEngineReloadGuests();
@@ -338,7 +369,8 @@ if ($method === 'POST') {
             'guest_id' => $newGuestId,
             'guest_code' => $guestCode,
             'guest_name' => $guestName,
-            'snapshot_path' => $snapshotPath
+            'snapshot_path' => $snapshotPath,
+            'full_snapshot_path' => $fullSnapshotPath
         ], 201);
     }
 

@@ -38,6 +38,32 @@ try {
     $db->exec($sql);
     echo "✓ Table 'tamper_logs' created successfully.\n";
 
+    // Add full_snapshot_path to guest_logs if not exists
+    $cols = $db->query("SHOW COLUMNS FROM `guest_logs` LIKE 'full_snapshot_path'")->fetchAll();
+    if (empty($cols)) {
+        $db->exec("ALTER TABLE `guest_logs` ADD COLUMN `full_snapshot_path` VARCHAR(255) NULL AFTER `snapshot_path`");
+        echo "✓ Column 'full_snapshot_path' added to 'guest_logs'.\n";
+    } else {
+        echo "✓ Column 'full_snapshot_path' already exists in 'guest_logs'.\n";
+    }
+
+    // Add first_full_photo and latest_full_photo to guests if not exists
+    $colsG1 = $db->query("SHOW COLUMNS FROM `guests` LIKE 'first_full_photo'")->fetchAll();
+    if (empty($colsG1)) {
+        $db->exec("ALTER TABLE `guests` ADD COLUMN `first_full_photo` LONGTEXT NULL AFTER `first_photo`");
+        echo "✓ Column 'first_full_photo' added to 'guests'.\n";
+    } else {
+        echo "✓ Column 'first_full_photo' already exists in 'guests'.\n";
+    }
+
+    $colsG2 = $db->query("SHOW COLUMNS FROM `guests` LIKE 'latest_full_photo'")->fetchAll();
+    if (empty($colsG2)) {
+        $db->exec("ALTER TABLE `guests` ADD COLUMN `latest_full_photo` LONGTEXT NULL AFTER `latest_photo`");
+        echo "✓ Column 'latest_full_photo' added to 'guests'.\n";
+    } else {
+        echo "✓ Column 'latest_full_photo' already exists in 'guests'.\n";
+    }
+
 } catch (Exception $e) {
     echo "Migration failed: " . $e->getMessage() . "\n";
     exit(1);

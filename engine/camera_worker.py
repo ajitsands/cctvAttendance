@@ -157,7 +157,7 @@ class LowLatencyCameraWorker:
         except Exception as e:
             print(f"[Camera {self.camera_id}] Blacklist breach alert note: {e}")
 
-    def trigger_guest_movement(self, guest, confidence, frame_snapshot=None):
+    def trigger_guest_movement(self, guest, confidence, frame_snapshot=None, full_frame=None):
         gid = guest["id"]
         now = time.time()
         if gid in self.last_guest_punch_time:
@@ -175,17 +175,27 @@ class LowLatencyCameraWorker:
         }
         if frame_snapshot is not None:
             try:
-                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                _, buffer = cv2.imencode('.jpg', frame_snapshot, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 b64_snap = base64.b64encode(buffer).decode('utf-8')
                 payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
             except Exception as ex:
                 print(f"[Camera {self.camera_id}] Guest snapshot encode error: {ex}")
+
+        # Full-screen camera frame capture to identify group arrival or companions
+        if full_frame is not None:
+            try:
+                _, full_buf = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                b64_full = base64.b64encode(full_buf).decode('utf-8')
+                payload["full_snapshot"] = f"data:image/jpeg;base64,{b64_full}"
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Guest full screen encode error: {ex}")
+
         try:
             requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=6)
         except Exception as e:
             print(f"[Camera {self.camera_id}] Guest movement note: {e}")
 
-    def trigger_new_guest_enroll(self, embedding, confidence, frame_snapshot=None):
+    def trigger_new_guest_enroll(self, embedding, confidence, frame_snapshot=None, full_frame=None):
         now = time.time()
         if now - self.last_unknown_enroll_time < 3: # Responsive 3s cooldown
             return
@@ -206,6 +216,16 @@ class LowLatencyCameraWorker:
                 payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
             except Exception as ex:
                 print(f"[Camera {self.camera_id}] Unknown snapshot encode error: {ex}")
+
+        # Full-screen camera frame capture to identify group arrival or companions
+        if full_frame is not None:
+            try:
+                _, full_buf = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                b64_full = base64.b64encode(full_buf).decode('utf-8')
+                payload["full_snapshot"] = f"data:image/jpeg;base64,{b64_full}"
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Unknown full screen encode error: {ex}")
+
         try:
             resp = requests.post(f"{PHP_API_URL}/guests.php?action=record_movement", json=payload, timeout=6)
             if resp.status_code == 201:
@@ -440,7 +460,7 @@ class LowLatencyCameraWorker:
                             new_detected.append((bbox, g_name, best_guest_conf, "GUEST", g_code))
                             threading.Thread(
                                 target=self.trigger_guest_movement,
-                                args=(best_guest, best_guest_conf, crop_copy),
+                                args=(best_guest, best_guest_conf, crop_copy, raw_frame.copy()),
                                 daemon=True
                             ).start()
                         else:
@@ -448,7 +468,7 @@ class LowLatencyCameraWorker:
                             new_detected.append((bbox, "New Guest / Customer", round(conf * 100, 1), "NEW_GUEST", "Auto-Enrolling..."))
                             threading.Thread(
                                 target=self.trigger_new_guest_enroll,
-                                args=(emb, round(conf * 100, 1), crop_copy),
+                                args=(emb, round(conf * 100, 1), crop_copy, raw_frame.copy()),
                                 daemon=True
                             ).start()
 
