@@ -22,6 +22,7 @@ os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_engine import OfflineFaceEngine
+from anti_spoof import AntiSpoofDetector
 
 PHP_API_URL = os.environ.get("PHP_API_URL", "http://127.0.0.1:8000/api")
 ENGINE_PORT = int(os.environ.get("ENGINE_PORT", 8001))
@@ -58,6 +59,10 @@ class LowLatencyCameraWorker:
         self.guests_lock = threading.Lock()
         self.last_guest_punch_time = {}
         self.last_unknown_enroll_time = 0
+
+        # Version 2.1: Anti-Spoofing & Tamper Detection
+        self.anti_spoof = AntiSpoofDetector(sensitivity=0.75)
+        self.last_tamper_alert_time = {}
 
         # Frame buffers & locks
         self.latest_raw_frame = None
@@ -208,6 +213,44 @@ class LowLatencyCameraWorker:
         except Exception as e:
             print(f"[Camera {self.camera_id}] New guest enrollment note: {e}")
 
+    def trigger_tamper_incident(self, user, liveness_score, confidence, reason, whole_frame=None):
+        uid = user.get("id") or 0
+        now = time.time()
+        cooldown_key = f"{uid}_{user.get('user_code')}"
+        if cooldown_key in self.last_tamper_alert_time:
+            if now - self.last_tamper_alert_time[cooldown_key] < 12: # 12s cooldown per targeted person
+                return
+        self.last_tamper_alert_time[cooldown_key] = now
+        print(f"[TAMPER ALERT] 🚫 PRESENTATION ATTACK BLOCKED: {user.get('full_name')} ({user.get('user_code')}) - Liveness: {liveness_score}%, Reason: {reason} at {self.gate}!")
+
+        payload = {
+            "user_id": uid if uid > 0 else None,
+            "target_name": user.get("full_name", "Unknown"),
+            "target_code": user.get("user_code", ""),
+            "camera_id": self.camera_id,
+            "gate_name": self.gate,
+            "direction": self.role,
+            "event_type": "Photo / Screen Presentation Attack",
+            "reason": reason,
+            "liveness_score": liveness_score,
+            "confidence_score": confidence,
+            "detected_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        if whole_frame is not None:
+            try:
+                # Capture the WHOLE camera screen (entire frame) as requested by the user
+                _, buffer = cv2.imencode('.jpg', whole_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                b64_snap = base64.b64encode(buffer).decode('utf-8')
+                payload["snapshot"] = f"data:image/jpeg;base64,{b64_snap}"
+            except Exception as ex:
+                print(f"[Camera {self.camera_id}] Tamper whole-screen snapshot encode error: {ex}")
+
+        try:
+            requests.post(f"{PHP_API_URL}/tamper.php?action=log_tamper", json=payload, timeout=6)
+        except Exception as e:
+            print(f"[Camera {self.camera_id}] Tamper incident delivery note: {e}")
+
     def _capture_loop(self):
         """Dedicated high-speed thread: continuously reads RTSP frames to prevent socket buffer accumulation."""
         print(f"[Camera {self.camera_id}] Capture thread started on {self.rtsp_url} ({self.role} Gate)...")
@@ -353,6 +396,22 @@ class LowLatencyCameraWorker:
                                 best_user_conf = norm_conf
 
                         if best_user:
+                            # Version 2.1: Liveness & Anti-Spoofing presentation attack check
+                            landmarks_pts = [orig_face[p] for p in range(4, 14)]
+                            is_live, liveness_score, reason, details = self.anti_spoof.analyze_face(
+                                raw_frame, bbox, landmarks=landmarks_pts, tracking_id=f"emp_{best_user['id']}"
+                            )
+
+                            if not is_live:
+                                # Block punch, draw warning HUD, and log WHOLE camera screen frame!
+                                new_detected.append((bbox, best_user["full_name"], best_user_conf, "TAMPER", reason))
+                                threading.Thread(
+                                    target=self.trigger_tamper_incident,
+                                    args=(best_user, liveness_score, best_user_conf, reason, raw_frame.copy()),
+                                    daemon=True
+                                ).start()
+                                continue
+
                             new_detected.append((bbox, best_user["full_name"], best_user_conf, "EMPLOYEE", best_user.get("user_code", "")))
                             threading.Thread(
                                 target=self.trigger_punch,
@@ -459,6 +518,13 @@ class LowLatencyCameraWorker:
                     text_bg_color = (180, 110, 0)
                     title_label = f" GUEST: {name.upper()} "
                     sub_label = f" {det_code} | {self.role} LOGGED | {int(c_score)}% "
+                elif det_type == "TAMPER":
+                    # Warning Crimson / Red HUD: Photo Spoof Rejected
+                    color = (0, 0, 255)
+                    corner_color = (60, 60, 255)
+                    text_bg_color = (0, 0, 160)
+                    title_label = f" ! TAMPER BLOCKED: {name.upper()} ! "
+                    sub_label = f" PHOTO SPOOF REJECTED | {det_code} "
                 elif det_type == "EMPLOYEE":
                     # Green for IN, Vibrant Pink for OUT
                     color = (0, 235, 100) if self.role == 'IN' else (236, 72, 153)

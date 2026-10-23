@@ -38,6 +38,13 @@ backend/uploads/guests/*
 frontend/public/uploads/guests/*
 !frontend/public/uploads/guests/.gitkeep
 
+uploads/tamper/*
+!uploads/tamper/.gitkeep
+backend/uploads/tamper/*
+!backend/uploads/tamper/.gitkeep
+frontend/public/uploads/tamper/*
+!frontend/public/uploads/tamper/.gitkeep
+
 # User-uploaded dynamic profile images (exclude runtime user photos from git)
 uploads/profiles/*
 !uploads/profiles/.gitkeep

@@ -159,6 +159,21 @@ export const api = {
   // Version 2.0: Real-Time Security Alert Stream
   pollSecurityAlerts: (lastId = 0) => request(`${API_BASE}/security_alerts.php?last_id=${lastId}`),
 
+  // Version 2.1: Camera Tamper & Anti-Spoofing Audit Ledger
+  getTamperLogs: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`${API_BASE}/tamper.php?${query}`);
+  },
+  reviewTamperLog: (id, notes = '', reviewedBy = 'Security Admin') => request(`${API_BASE}/tamper.php?action=review`, {
+    method: 'POST',
+    body: JSON.stringify({ id, notes, reviewed_by: reviewedBy })
+  }),
+  pollTamperAlerts: (sinceId = 0) => request(`${API_BASE}/tamper.php?action=poll_tamper&since_id=${sinceId}`),
+  logTamperTest: (payload) => request(`${API_BASE}/tamper.php?action=log_tamper`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+
   // Offline Face AI Engine Bridge
   extractFaceEmbedding: async (base64Image) => {
     return request(`${ENGINE_BASE}/extract_embedding`, {

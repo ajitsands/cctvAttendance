@@ -7,6 +7,7 @@ import TimesheetView from './views/TimesheetView';
 import UsersView from './views/UsersView';
 import GuestsView from './views/GuestsView';
 import BlacklistView from './views/BlacklistView';
+import TamperView from './views/TamperView';
 import CamerasView from './views/CamerasView';
 import ShiftsView from './views/ShiftsView';
 import HrSyncView from './views/HrSyncView';
@@ -196,6 +197,9 @@ export default function App() {
         )}
         {currentTab === 'blacklist' && (
           <BlacklistView />
+        )}
+        {currentTab === 'tamper' && (
+          <TamperView />
         )}
         {currentTab === 'cameras' && (
           <CamerasView onCamerasChanged={loadInitialData} />
