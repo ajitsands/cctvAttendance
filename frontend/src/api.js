@@ -109,6 +109,10 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return request(`${API_BASE}/reports.php?${query}`);
   },
+  getMonthlyMatrixReport: (params = {}) => {
+    const query = new URLSearchParams({ action: 'monthly_matrix', ...params }).toString();
+    return request(`${API_BASE}/reports.php?${query}`);
+  },
 
   // Version 2.0: Blacklist & Security Management
   getBlacklist: (params = {}) => {

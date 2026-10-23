@@ -7,6 +7,261 @@ require_once __DIR__ . '/../helpers/response.php';
 
 $db = Database::getConnection();
 
+// ACTION: Monthly Attendance Matrix Report (1 to 31 Days Grid)
+if (($_GET['action'] ?? '') === 'monthly_matrix' || ($_GET['type'] ?? '') === 'matrix') {
+    $year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
+    $month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('m');
+    $dept = $_GET['department'] ?? '';
+    $userId = !empty($_GET['user_id']) ? (int)$_GET['user_id'] : null;
+
+    if ($month < 1 || $month > 12) {
+        $month = (int)date('m');
+    }
+    if ($year < 2000 || $year > 2100) {
+        $year = (int)date('Y');
+    }
+
+    $monthStr = str_pad($month, 2, '0', STR_PAD_LEFT);
+    $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+    $startDate = "$year-$monthStr-01";
+    $endDate = "$year-$monthStr-" . str_pad($daysInMonth, 2, '0', STR_PAD_LEFT);
+
+    // Days Header structure: 1 to daysInMonth (e.g. 1 to 31)
+    $daysHeader = [];
+    $totalWorkdaysInMonth = 0;
+    for ($d = 1; $d <= $daysInMonth; $d++) {
+        $dayStr = str_pad($d, 2, '0', STR_PAD_LEFT);
+        $dateStr = "$year-$monthStr-$dayStr";
+        $timestamp = strtotime($dateStr);
+        $dayOfWeek = (int)date('N', $timestamp); // 1 (Mon) to 7 (Sun)
+        $dayShort = date('D', $timestamp); // Mon, Tue...
+        $isWeekend = ($dayOfWeek == 5 || $dayOfWeek == 6 || $dayOfWeek == 7); // Fri/Sat/Sun typical in GCC / Int'l
+        $isOfficialOff = ($dayOfWeek == 5 || $dayOfWeek == 6); // Fri & Sat
+
+        if (!$isOfficialOff) {
+            $totalWorkdaysInMonth++;
+        }
+
+        $daysHeader[] = [
+            'day' => $d,
+            'date' => $dateStr,
+            'day_name' => $dayShort,
+            'day_of_week' => $dayOfWeek,
+            'is_weekend' => $isOfficialOff
+        ];
+    }
+
+    // Fetch active users
+    $userSql = "
+        SELECT u.id, u.user_code, u.full_name, u.user_type, u.department, u.designation, u.profile_photo,
+               s.name as shift_name, s.start_time as shift_start, s.end_time as shift_end, s.total_hours as shift_daily_hours
+        FROM users u
+        LEFT JOIN shifts s ON u.shift_id = s.id
+        WHERE u.status = 'Active'
+    ";
+    $userParams = [];
+    if (!empty($userId)) {
+        $userSql .= " AND u.id = :user_id";
+        $userParams[':user_id'] = $userId;
+    }
+    if (!empty($dept)) {
+        $userSql .= " AND u.department = :dept";
+        $userParams[':dept'] = $dept;
+    }
+    $userSql .= " ORDER BY u.full_name ASC";
+    $stmtUsers = $db->prepare($userSql);
+    $stmtUsers->execute($userParams);
+    $users = $stmtUsers->fetchAll();
+
+    // Fetch daily attendance summaries for this month
+    $summarySql = "
+        SELECT s.*, u.id as u_id
+        FROM daily_attendance_summary s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.attendance_date BETWEEN :start_date AND :end_date
+    ";
+    $summaryParams = [':start_date' => $startDate, ':end_date' => $endDate];
+    if (!empty($userId)) {
+        $summarySql .= " AND s.user_id = :user_id";
+        $summaryParams[':user_id'] = $userId;
+    }
+    if (!empty($dept)) {
+        $summarySql .= " AND u.department = :dept";
+        $summaryParams[':dept'] = $dept;
+    }
+    $stmtSummary = $db->prepare($summarySql);
+    $stmtSummary->execute($summaryParams);
+    $summaries = $stmtSummary->fetchAll();
+
+    // Index summaries by "userId_YYYY-MM-DD"
+    $summaryMap = [];
+    foreach ($summaries as $sm) {
+        $key = $sm['user_id'] . '_' . $sm['attendance_date'];
+        $summaryMap[$key] = $sm;
+    }
+
+    // Build the Matrix rows
+    $matrixRows = [];
+    $todayDate = date('Y-m-d');
+
+    foreach ($users as $user) {
+        $uId = (int)$user['id'];
+        $dailyHoursTarget = !empty($user['shift_daily_hours']) ? (float)$user['shift_daily_hours'] : 7.00;
+        $expectedMonthlyHours = round($totalWorkdaysInMonth * $dailyHoursTarget, 1);
+
+        $totalWorkedMinutes = 0;
+        $totalLateMinutes = 0;
+        $totalEarlyMinutes = 0;
+        $presentDaysCount = 0;
+        $absentDaysCount = 0;
+        $lateDaysCount = 0;
+        $earlyDaysCount = 0;
+
+        $daysData = [];
+
+        foreach ($daysHeader as $dh) {
+            $dayNum = $dh['day'];
+            $dateStr = $dh['date'];
+            $isWeekend = $dh['is_weekend'];
+            $isFuture = ($dateStr > $todayDate);
+
+            $key = $uId . '_' . $dateStr;
+            $sm = $summaryMap[$key] ?? null;
+
+            if ($sm && (!empty($sm['first_in']) || (float)$sm['total_hours'] > 0)) {
+                $inTime = !empty($sm['first_in']) ? substr($sm['first_in'], 0, 5) : '--:--';
+                $outTime = !empty($sm['last_out']) ? substr($sm['last_out'], 0, 5) : '--:--';
+
+                $insideMins = (int)($sm['total_inside_minutes'] ?? 0);
+                if ($insideMins === 0 && !empty($sm['total_hours'])) {
+                    $insideMins = (int)round((float)$sm['total_hours'] * 60);
+                }
+                $twhHours = floor($insideMins / 60);
+                $twhMins = $insideMins % 60;
+                $twhFormatted = sprintf("%d:%02d Hrs", $twhHours, $twhMins);
+
+                $lateMins = (int)($sm['late_in_mins'] ?? 0);
+                $earlyMins = (int)($sm['early_out_mins'] ?? 0);
+
+                if ($lateMins > 0) {
+                    $lateHours = floor($lateMins / 60);
+                    $lateRemainMins = $lateMins % 60;
+                    $lateFormatted = $lateHours > 0 ? sprintf("%dh %dm", $lateHours, $lateRemainMins) : sprintf("%d Mins", $lateRemainMins);
+                } else {
+                    $lateFormatted = null;
+                }
+
+                if ($earlyMins > 0) {
+                    $earlyHours = floor($earlyMins / 60);
+                    $earlyRemainMins = $earlyMins % 60;
+                    $earlyFormatted = $earlyHours > 0 ? sprintf("%dh %dm", $earlyHours, $earlyRemainMins) : sprintf("%d Mins", $earlyRemainMins);
+                } else {
+                    $earlyFormatted = null;
+                }
+
+                $status = $sm['status'] ?? 'Present';
+                $totalWorkedMinutes += $insideMins;
+                $totalLateMinutes += $lateMins;
+                $totalEarlyMinutes += $earlyMins;
+                $presentDaysCount++;
+                if ($lateMins > 0) $lateDaysCount++;
+                if ($earlyMins > 0) $earlyDaysCount++;
+
+                $daysData[$dayNum] = [
+                    'day' => $dayNum,
+                    'date' => $dateStr,
+                    'status' => $status,
+                    'has_record' => true,
+                    'is_weekend' => $isWeekend,
+                    'in_time' => $inTime,
+                    'out_time' => $outTime,
+                    'twh' => $twhFormatted,
+                    'twh_minutes' => $insideMins,
+                    'late_by' => $lateFormatted,
+                    'late_mins' => $lateMins,
+                    'early_by' => $earlyFormatted,
+                    'early_mins' => $earlyMins
+                ];
+            } else {
+                if ($isFuture) {
+                    $status = 'Upcoming';
+                } elseif ($isWeekend) {
+                    $status = 'Weekend';
+                } else {
+                    $status = 'Absent';
+                    $absentDaysCount++;
+                }
+
+                $daysData[$dayNum] = [
+                    'day' => $dayNum,
+                    'date' => $dateStr,
+                    'status' => $status,
+                    'has_record' => false,
+                    'is_weekend' => $isWeekend,
+                    'in_time' => null,
+                    'out_time' => null,
+                    'twh' => null,
+                    'twh_minutes' => 0,
+                    'late_by' => null,
+                    'late_mins' => 0,
+                    'early_by' => null,
+                    'early_mins' => 0
+                ];
+            }
+        }
+
+        // Format Monthly Totals
+        $totWorkHrs = floor($totalWorkedMinutes / 60);
+        $totWorkMins = $totalWorkedMinutes % 60;
+        $totalWorkHoursFormatted = sprintf("%d:%02d Hrs", $totWorkHrs, $totWorkMins);
+
+        $totLateHrs = floor($totalLateMinutes / 60);
+        $totLateMins = $totalLateMinutes % 60;
+        $totalLateFormatted = $totalLateMinutes > 0 ? sprintf("%d:%02d Hrs", $totLateHrs, $totLateMins) : "0:00 Hrs";
+
+        $totEarlyHrs = floor($totalEarlyMinutes / 60);
+        $totEarlyMins = $totalEarlyMinutes % 60;
+        $totalEarlyFormatted = $totalEarlyMinutes > 0 ? sprintf("%d:%02d Hrs", $totEarlyHrs, $totEarlyMins) : "0:00 Hrs";
+
+        $matrixRows[] = [
+            'user_id' => $uId,
+            'user_code' => $user['user_code'],
+            'full_name' => $user['full_name'],
+            'department' => $user['department'] ?? 'General',
+            'designation' => $user['designation'] ?? 'Staff',
+            'profile_photo' => $user['profile_photo'],
+            'shift_name' => $user['shift_name'] ?? 'Standard Shift',
+            'daily_target_hours' => $dailyHoursTarget,
+            'monthly_totals' => [
+                'total_worked_hours' => $totalWorkHoursFormatted,
+                'total_worked_minutes' => $totalWorkedMinutes,
+                'expected_hours' => $expectedMonthlyHours . " Hrs",
+                'expected_hours_raw' => $expectedMonthlyHours,
+                'total_late_hours' => $totalLateFormatted,
+                'total_late_minutes' => $totalLateMinutes,
+                'total_early_hours' => $totalEarlyFormatted,
+                'total_early_minutes' => $totalEarlyMinutes,
+                'days_present' => $presentDaysCount,
+                'days_absent' => $absentDaysCount,
+                'days_late' => $lateDaysCount,
+                'days_early' => $earlyDaysCount,
+                'workdays_in_month' => $totalWorkdaysInMonth
+            ],
+            'days' => $daysData
+        ];
+    }
+
+    jsonResponse([
+        'year' => $year,
+        'month' => $month,
+        'month_name' => date('F Y', strtotime("$year-$monthStr-01")),
+        'days_in_month' => $daysInMonth,
+        'total_workdays' => $totalWorkdaysInMonth,
+        'days_header' => $daysHeader,
+        'matrix' => $matrixRows
+    ]);
+}
+
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate   = $_GET['end_date'] ?? date('Y-m-d');
 $userId    = !empty($_GET['user_id']) ? (int)$_GET['user_id'] : null;

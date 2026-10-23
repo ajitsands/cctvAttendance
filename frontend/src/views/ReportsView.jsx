@@ -16,10 +16,12 @@ import {
   UserCheck,
   RefreshCw,
   Eye,
-  Building
+  Building,
+  Table2
 } from 'lucide-react';
 import { api } from '../api';
 import DataTable from '../components/DataTable';
+import MonthlyMatrixReport from '../components/MonthlyMatrixReport';
 
 export default function ReportsView() {
   // Date range defaults to last 7 days
@@ -33,8 +35,8 @@ export default function ReportsView() {
   const [department, setDepartment] = useState('');
   const [status, setStatus] = useState('');
   
-  // Tab: 'employees' (Rollup per employee) or 'daily' (Granular daily audit trail)
-  const [activeTab, setActiveTab] = useState('employees');
+  // Tab: 'matrix' (Monthly 1..31 days matrix), 'employees' (Rollup per employee) or 'daily' (Granular daily audit trail)
+  const [activeTab, setActiveTab] = useState('matrix');
   const [activeQuickRange, setActiveQuickRange] = useState('7days');
   
   const [usersList, setUsersList] = useState([]);
@@ -227,17 +229,61 @@ export default function ReportsView() {
             Multi-gate rollups: In-Office Productive Hours, Break Hours, Gate Outings Count, Average Outing Duration, Late Arrivals & Early Exits.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn btn-secondary" onClick={handlePrint}>
-            <Printer size={16} /> Print Report
-          </button>
-          <button className="btn btn-primary" onClick={exportCSV}>
-            <Download size={16} /> Export {activeTab === 'employees' ? 'Employee Rollup' : 'Daily Logs'} (CSV)
-          </button>
-        </div>
+        {activeTab !== 'matrix' && (
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button className="btn btn-secondary" onClick={handlePrint}>
+              <Printer size={16} /> Print Report
+            </button>
+            <button className="btn btn-primary" onClick={exportCSV}>
+              <Download size={16} /> Export {activeTab === 'employees' ? 'Employee Rollup' : 'Daily Logs'} (CSV)
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Filter Card */}
+      {/* View Switcher Tabs */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '0.75rem', 
+        marginBottom: '1.5rem',
+        borderBottom: '1px solid var(--border-color)',
+        paddingBottom: '0.85rem'
+      }}>
+        <button 
+          className={`btn ${activeTab === 'matrix' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('matrix')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}
+        >
+          <Table2 size={16} />
+          <strong>Monthly Matrix (1–31 Days)</strong>
+        </button>
+
+        <button 
+          className={`btn ${activeTab === 'employees' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('employees')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}
+        >
+          <Users size={16} />
+          <strong>Employee Rollup Metrics</strong> ({reportData?.employee_summaries?.length || 0})
+        </button>
+
+        <button 
+          className={`btn ${activeTab === 'daily' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('daily')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}
+        >
+          <Calendar size={16} />
+          <strong>Daily Audit Logs</strong> ({reportData?.rows?.length || 0})
+        </button>
+      </div>
+
+      {/* TAB 0: Monthly Matrix Grid (1 to 31 Days) */}
+      {activeTab === 'matrix' && (
+        <MonthlyMatrixReport />
+      )}
+
+      {activeTab !== 'matrix' && (
+        <>
       <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.15rem', alignItems: 'center' }}>
           <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.35rem' }}>
@@ -556,33 +602,6 @@ export default function ReportsView() {
         </div>
       )}
 
-      {/* View Switcher Tabs */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '0.75rem', 
-        marginBottom: '1.25rem',
-        borderBottom: '1px solid var(--border-color)',
-        paddingBottom: '0.75rem'
-      }}>
-        <button 
-          className={`btn ${activeTab === 'employees' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setActiveTab('employees')}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
-        >
-          <Users size={16} />
-          <strong>Employee Rollup Metrics</strong> ({reportData?.employee_summaries?.length || 0})
-        </button>
-
-        <button 
-          className={`btn ${activeTab === 'daily' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setActiveTab('daily')}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
-        >
-          <Calendar size={16} />
-          <strong>Daily Audit Logs</strong> ({reportData?.rows?.length || 0})
-        </button>
-      </div>
-
       {/* TAB 1: Employee Rollup Metrics (Requested View) */}
       {activeTab === 'employees' && (
         <DataTable
@@ -897,6 +916,8 @@ export default function ReportsView() {
             ]}
           />
         </div>
+      )}
+        </>
       )}
     </div>
   );
