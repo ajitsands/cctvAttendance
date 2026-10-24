@@ -774,7 +774,7 @@ class CameraManager:
         except Exception as e:
             print(f"[CameraManager] Camera sync error: {e}")
 
-    def get_worker(self, camera_id=None, role=None):
+    def get_worker(self, camera_id=None, role=None, ip=None):
         with self.lock:
             if camera_id is not None:
                 try:
@@ -783,6 +783,13 @@ class CameraManager:
                         return self.workers[cid]
                 except (ValueError, TypeError):
                     pass
+            if ip is not None:
+                ip_clean = str(ip).strip().lower()
+                for w in self.workers.values():
+                    w_ip = str(w.ip).strip().lower()
+                    w_rtsp = str(w.rtsp_url or '').lower()
+                    if w_ip == ip_clean or ip_clean in w_ip or ip_clean in w_rtsp:
+                        return w
             if role is not None:
                 r_upper = str(role).upper()
                 for w in self.workers.values():
@@ -884,12 +891,14 @@ class StreamHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(status_data).encode('utf-8'))
 
         elif path.startswith('/video_feed'):
-            # Parse requested camera ID or role
-            # Path can be /video_feed/1, /video_feed/2, or /video_feed?role=OUT
+            # Parse requested camera ID, IP address, or role
+            # Path can be /video_feed/1, /video_feed/2, or /video_feed?ip=192.168.100.113 or /video_feed?role=OUT
             target_worker = None
             parts = path.strip('/').split('/')
             if len(parts) >= 2 and parts[1].isdigit():
                 target_worker = manager.get_worker(camera_id=int(parts[1]))
+            elif 'ip' in query:
+                target_worker = manager.get_worker(ip=query['ip'][0])
             elif 'role' in query:
                 target_worker = manager.get_worker(role=query['role'][0])
             elif 'camera_id' in query:
@@ -930,14 +939,40 @@ class StreamHandler(BaseHTTPRequestHandler):
                     break
 
         elif path.startswith('/snapshot'):
-            target_worker = manager.get_worker()
+            target_worker = None
             parts = path.strip('/').split('/')
             if len(parts) >= 2 and parts[1].isdigit():
                 target_worker = manager.get_worker(camera_id=int(parts[1]))
+            elif 'ip' in query:
+                target_worker = manager.get_worker(ip=query['ip'][0])
+            elif 'camera_id' in query:
+                target_worker = manager.get_worker(camera_id=query['camera_id'][0])
+            else:
+                target_worker = manager.get_worker()
 
             jpg_bytes = b''
             if target_worker:
                 _, jpg_bytes = target_worker.get_latest_jpeg()
+            
+            # Ad-hoc snapshot fallback for custom IP or stream URL if not found in active workers
+            if not jpg_bytes and ('ip' in query or 'url' in query):
+                custom_target = query.get('url', query.get('ip', [None]))[0]
+                if custom_target:
+                    clean_target = custom_target.strip()
+                    if not clean_target.startswith(('rtsp://', 'http://', 'https://')):
+                        clean_target = f"rtsp://admin:admin%40123@{clean_target}:554/cam/realmonitor?channel=1&subtype=0"
+                    try:
+                        cap = cv2.VideoCapture(clean_target, cv2.CAP_FFMPEG)
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret and frame is not None:
+                                _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                                jpg_bytes = buf.tobytes()
+                            cap.release()
+                    except Exception as e:
+                        print(f"Ad-hoc snapshot error: {e}")
+
             self._set_cors(200, content_type='image/jpeg')
             self.wfile.write(jpg_bytes if jpg_bytes else b'')
 

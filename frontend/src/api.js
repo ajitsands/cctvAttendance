@@ -184,9 +184,21 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return request(`${API_BASE}/tamper.php?${query}`);
   },
-  reviewTamperLog: (id, notes = '', reviewedBy = 'Security Admin') => request(`${API_BASE}/tamper.php?action=review`, {
+  reviewTamperLog: (id, notes = '', reviewedBy = 'Security Admin', archiveAlso = false) => request(`${API_BASE}/tamper.php?action=review`, {
     method: 'POST',
-    body: JSON.stringify({ id, notes, reviewed_by: reviewedBy })
+    body: JSON.stringify({ id, notes, reviewed_by: reviewedBy, archive_also: archiveAlso })
+  }),
+  archiveTamperLog: (ids) => request(`${API_BASE}/tamper.php?action=archive`, {
+    method: 'POST',
+    body: JSON.stringify(Array.isArray(ids) ? { ids } : { id: ids })
+  }),
+  restoreTamperLog: (ids) => request(`${API_BASE}/tamper.php?action=restore`, {
+    method: 'POST',
+    body: JSON.stringify(Array.isArray(ids) ? { ids } : { id: ids })
+  }),
+  deleteTamperLog: (ids) => request(`${API_BASE}/tamper.php?action=delete`, {
+    method: 'POST',
+    body: JSON.stringify(Array.isArray(ids) ? { ids } : { id: ids })
   }),
   pollTamperAlerts: (sinceId = 0) => request(`${API_BASE}/tamper.php?action=poll_tamper&since_id=${sinceId}`),
   logTamperTest: (payload) => request(`${API_BASE}/tamper.php?action=log_tamper`, {

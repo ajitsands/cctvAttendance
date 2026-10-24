@@ -40,7 +40,7 @@ if ($method === 'GET') {
     }
 
     // 2. Fetch tamper logs & summary stats
-    $statusFilter = $_GET['status'] ?? 'all'; // 'unreviewed' or 'all'
+    $statusFilter = $_GET['status'] ?? 'all'; // 'unreviewed', 'reviewed', 'archived', 'all'
     $dateFilter = $_GET['date'] ?? '';
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
 
@@ -54,8 +54,16 @@ if ($method === 'GET') {
 
     $params = [];
     if ($statusFilter === 'unreviewed') {
-        $sql .= " AND t.is_reviewed = 0";
+        $sql .= " AND t.is_reviewed = 0 AND COALESCE(t.is_archived, 0) = 0";
+    } elseif ($statusFilter === 'reviewed') {
+        $sql .= " AND t.is_reviewed = 1 AND COALESCE(t.is_archived, 0) = 0";
+    } elseif ($statusFilter === 'archived') {
+        $sql .= " AND COALESCE(t.is_archived, 0) = 1";
+    } else {
+        // Default 'all' shows all active unarchived incidents
+        $sql .= " AND COALESCE(t.is_archived, 0) = 0";
     }
+
     if (!empty($dateFilter)) {
         $sql .= " AND DATE(t.detected_at) = ?";
         $params[] = $dateFilter;
@@ -67,15 +75,19 @@ if ($method === 'GET') {
     $logs = $stmt->fetchAll();
 
     // Summary stats
-    $totalCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs")->fetchColumn();
-    $unreviewedCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE is_reviewed = 0")->fetchColumn();
-    $todayCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE DATE(detected_at) = CURDATE()")->fetchColumn();
+    $totalCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE COALESCE(is_archived, 0) = 0")->fetchColumn();
+    $unreviewedCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE is_reviewed = 0 AND COALESCE(is_archived, 0) = 0")->fetchColumn();
+    $reviewedCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE is_reviewed = 1 AND COALESCE(is_archived, 0) = 0")->fetchColumn();
+    $archivedCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE COALESCE(is_archived, 0) = 1")->fetchColumn();
+    $todayCount = (int)$db->query("SELECT COUNT(*) FROM tamper_logs WHERE DATE(detected_at) = CURDATE() AND COALESCE(is_archived, 0) = 0")->fetchColumn();
 
     jsonResponse([
         'stats' => [
             'total_tamper_count' => $totalCount,
             'today_tamper_count' => $todayCount,
-            'unreviewed_count' => $unreviewedCount
+            'unreviewed_count' => $unreviewedCount,
+            'reviewed_count' => $reviewedCount,
+            'archived_count' => $archivedCount
         ],
         'logs' => $logs
     ]);
@@ -121,8 +133,8 @@ if ($method === 'GET') {
 
         $stmt = $db->prepare("
             INSERT INTO tamper_logs 
-            (user_id, target_name, target_code, camera_id, gate_name, direction, event_type, reason, liveness_score, confidence_score, snapshot_path, detected_at, is_reviewed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            (user_id, target_name, target_code, camera_id, gate_name, direction, event_type, reason, liveness_score, confidence_score, snapshot_path, detected_at, is_reviewed, is_archived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
         ");
         $stmt->execute([
             $userId,
@@ -147,23 +159,111 @@ if ($method === 'GET') {
         ], 201);
 
     } elseif ($action === 'review') {
-        // ACTION: Mark Tamper incident as reviewed
+        // ACTION: Mark Tamper incident as reviewed (with optional archive)
         $id = (int)($input['id'] ?? 0);
         $notes = trim($input['notes'] ?? 'Acknowledged by security administrator.');
         $reviewedBy = trim($input['reviewed_by'] ?? 'Security Admin');
+        $archiveAlso = !empty($input['archive_also']);
 
         if ($id <= 0) {
             jsonError('Invalid tamper log ID', 400);
         }
 
-        $stmt = $db->prepare("
-            UPDATE tamper_logs 
-            SET is_reviewed = 1, reviewed_by = ?, reviewed_notes = ?, reviewed_at = NOW()
-            WHERE id = ?
-        ");
+        if ($archiveAlso) {
+            $stmt = $db->prepare("
+                UPDATE tamper_logs 
+                SET is_reviewed = 1, reviewed_by = ?, reviewed_notes = ?, reviewed_at = NOW(), is_archived = 1, archived_at = NOW()
+                WHERE id = ?
+            ");
+        } else {
+            $stmt = $db->prepare("
+                UPDATE tamper_logs 
+                SET is_reviewed = 1, reviewed_by = ?, reviewed_notes = ?, reviewed_at = NOW()
+                WHERE id = ?
+            ");
+        }
         $stmt->execute([$reviewedBy, $notes, $id]);
 
-        jsonResponse(['success' => true, 'id' => $id, 'message' => 'Incident marked as reviewed']);
+        jsonResponse([
+            'success' => true, 
+            'id' => $id, 
+            'archived' => $archiveAlso,
+            'message' => $archiveAlso ? 'Incident reviewed and archived' : 'Incident marked as reviewed'
+        ]);
+
+    } elseif ($action === 'archive') {
+        // ACTION: Move Tamper incident(s) to Archive Vault
+        $ids = !empty($input['ids']) ? $input['ids'] : (!empty($input['id']) ? [(int)$input['id']] : []);
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No tamper log ID(s) provided', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE tamper_logs SET is_archived = 1, archived_at = NOW() WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        jsonResponse([
+            'success' => true,
+            'archived_count' => $count,
+            'message' => "Successfully archived {$count} tamper incident(s)."
+        ]);
+
+    } elseif ($action === 'restore' || $action === 'unarchive') {
+        // ACTION: Restore Tamper incident(s) from Archive back to Active
+        $ids = !empty($input['ids']) ? $input['ids'] : (!empty($input['id']) ? [(int)$input['id']] : []);
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No tamper log ID(s) provided', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE tamper_logs SET is_archived = 0, archived_at = NULL WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        jsonResponse([
+            'success' => true,
+            'restored_count' => $count,
+            'message' => "Successfully restored {$count} tamper incident(s) back to active logs."
+        ]);
+
+    } elseif ($action === 'delete') {
+        // ACTION: Permanently delete Tamper incident(s)
+        $ids = !empty($input['ids']) ? $input['ids'] : (!empty($input['id']) ? [(int)$input['id']] : []);
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (empty($ids)) {
+            jsonError('No tamper log ID(s) provided', 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+        // Clean up physical snapshot files if any
+        $findStmt = $db->prepare("SELECT snapshot_path FROM tamper_logs WHERE id IN ($placeholders)");
+        $findStmt->execute($ids);
+        $snapshots = $findStmt->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($snapshots as $snap) {
+            if (!empty($snap)) {
+                $cleanSnap = ltrim($snap, '/');
+                @unlink(__DIR__ . '/../' . $cleanSnap);
+                @unlink(__DIR__ . '/../../frontend/public/' . $cleanSnap);
+            }
+        }
+
+        $stmt = $db->prepare("DELETE FROM tamper_logs WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+
+        jsonResponse([
+            'success' => true,
+            'deleted_count' => $count,
+            'message' => "Permanently deleted {$count} tamper incident log(s)."
+        ]);
+
     } else {
         jsonError('Invalid action', 400);
     }

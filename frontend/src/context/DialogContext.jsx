@@ -88,8 +88,15 @@ export function DialogProvider({ children }) {
     window.$toast = toast;
   }
 
+  const showConfirm = useCallback((titleOrOptions, message) => {
+    if (typeof titleOrOptions === 'string') {
+      return confirm({ title: titleOrOptions, message: message || '', isDanger: true });
+    }
+    return confirm(titleOrOptions);
+  }, [confirm]);
+
   return (
-    <DialogContext.Provider value={{ confirm, alert, toast }}>
+    <DialogContext.Provider value={{ confirm, alert, toast, showConfirm, showToast }}>
       {children}
 
       {/* Modern Confirm / Alert Modal */}

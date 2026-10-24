@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaNDS Lab & UNV - Contactless CCTV AI Attendance & Visitor Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --border-focus: #0284c7;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-sub: #334155;
+      
+      --sands-blue: #004b93;
+      --unv-blue: #0066b3;
+      --success: #10b981;
+      --success-bg: #ecfdf5;
+      --success-border: #a7f3d0;
+      
+      --accent: #2563eb;
+      --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 10px 25px -3px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 20px 40px -6px rgba(15, 23, 42, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem 1.5rem 2.5rem;
+    }
+
+    /* Top Executive Control Bar */
+    .top-bar {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      padding: 0.65rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .top-title {
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: var(--text-sub);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .controls-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn {
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-primary {
+      background: #004b93;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #00366b;
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-sub);
+    }
+    .btn-outline:hover {
+      background: #f1f5f9;
+    }
+
+    /* 16:9 Realistic Video Screen (Light Corporate Theme) */
+    .video-frame {
+      width: 100%;
+      max-width: 1100px;
+      aspect-ratio: 16 / 9;
+      background: #ffffff;
+      border-radius: 18px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Video Header with SaNDS Lab on Left & UNV on Right */
+    .video-header {
+      height: 64px;
+      background: #ffffff;
+      border-bottom: 1px solid #edf2f7;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 1.5rem;
+      z-index: 30;
+      position: relative;
+    }
+
+    .logo-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-left img {
+      height: 38px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .logo-left-fallback {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 900;
+      font-size: 1.25rem;
+      color: var(--sands-blue);
+      letter-spacing: -0.5px;
+    }
+
+    .logo-right {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .unv-logo-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #f0f7ff;
+      border: 1px solid #bae0ff;
+      padding: 4px 12px;
+      border-radius: 8px;
+    }
+
+    .unv-text {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 900;
+      color: var(--unv-blue);
+      letter-spacing: 0.5px;
+    }
+
+    .unv-subtitle {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #0369a1;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Live Feed Watermark Indicator */
+    .live-camera-tag {
+      position: absolute;
+      top: 76px;
+      left: 20px;
+      z-index: 25;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .red-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: blink 1.2s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(1.3); }
+    }
+
+    /* Big Center Play Overlay */
+    .big-play-overlay {
+      position: absolute;
+      inset: 64px 0 6px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.35);
+      backdrop-filter: blur(3px);
+      z-index: 45;
+      cursor: pointer;
+      transition: opacity 0.3s ease;
+    }
+
+    .big-play-btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #004b93;
+      font-size: 2.2rem;
+      padding-left: 6px;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .big-play-overlay:hover .big-play-btn {
+      transform: scale(1.1);
+    }
+
+    .big-play-text {
+      margin-top: 1rem;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #ffffff;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+      background: rgba(15, 23, 42, 0.7);
+      padding: 6px 18px;
+      border-radius: 20px;
+    }
+
+    /* Video Stage - Scenes */
+    .video-stage {
+      flex: 1;
+      position: relative;
+      background: #f1f5f9;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .scene {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.4s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .scene.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* 16:9 Perfect Fit Background Images */
+    .scene-image-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+    }
+
+    /* Real-Time Green Face Detection Box (Overlay Directly on Face) */
+    .face-bracket {
+      position: absolute;
+      border: 3px solid #10b981;
+      border-radius: 12px;
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), inset 0 0 15px rgba(16, 185, 129, 0.25);
+      animation: focusPop 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 20;
+    }
+    @keyframes focusPop {
+      0% { transform: scale(1.2); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .bracket-corner {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: #34d399;
+      border-style: solid;
+    }
+    .bc-tl { top: -3px; left: -3px; border-width: 4px 0 0 4px; border-radius: 6px 0 0 0; }
+    .bc-tr { top: -3px; right: -3px; border-width: 4px 4px 0 0; border-radius: 0 6px 0 0; }
+    .bc-bl { bottom: -3px; left: -3px; border-width: 0 0 4px 4px; border-radius: 0 0 0 6px; }
+    .bc-br { bottom: -3px; right: -3px; border-width: 0 4px 4px 0; border-radius: 0 0 6px 0; }
+
+    .bracket-scan-line {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #34d399, transparent);
+      box-shadow: 0 0 8px #34d399;
+      animation: scanSweep 1.8s infinite ease-in-out;
+    }
+    @keyframes scanSweep {
+      0% { top: 10%; opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { top: 90%; opacity: 0; }
+    }
+
+    .bracket-name-pill {
+      position: absolute;
+      bottom: -32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #10b981;
+      color: #ffffff;
+      font-size: 0.74rem;
+      font-weight: 800;
+      padding: 3px 11px;
+      border-radius: 20px;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Live Punch Toast Popup (Bottom Right of Video Feed) */
+    .punch-toast {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-left: 5px solid #10b981;
+      border-radius: 12px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: var(--shadow-lg);
+      z-index: 25;
+      animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(120%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .punch-toast-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #10b981;
+    }
+
+    .punch-toast-name {
+      font-weight: 800;
+      font-size: 0.88rem;
+      color: #0f172a;
+    }
+
+    .punch-toast-sub {
+      font-size: 0.74rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Timesheet Simulation UI (Scene 3) */
+    .timesheet-mockup {
+      width: 90%;
+      max-width: 960px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .mockup-header {
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mockup-title {
+      font-weight: 800;
+      font-size: 0.95rem;
+      color: var(--sands-blue);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    table.mockup-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+
+    table.mockup-table th {
+      background: #f8fafc;
+      padding: 10px 16px;
+      text-align: left;
+      font-weight: 700;
+      color: #64748b;
+      border-bottom: 1px solid var(--border);
+    }
+
+    table.mockup-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    .badge-present {
+      background: #ecfdf5;
+      color: #059669;
+      font-weight: 700;
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 12px;
+      border: 1px solid #a7f3d0;
+    }
+
+    /* Visitor Intelligence Mockup (Scene 4) */
+    .visitor-mockup-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      width: 88%;
+      max-width: 860px;
+      box-shadow: var(--shadow-lg);
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .visitor-snapshot-box {
+      width: 100%;
+      height: 200px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid #0284c7;
+      position: relative;
+    }
+
+    .visitor-snapshot-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Moving Dynamic Captions (Small, Elegant, Positioned with Content) */
+    .floating-caption {
+      position: absolute;
+      bottom: 22px;
+      left: 24px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 12px;
+      padding: 8px 18px;
+      box-shadow: var(--shadow-md);
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: captionPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes captionPop {
+      0% { transform: translateY(12px); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+
+    .caption-step-num {
+      background: var(--sands-blue);
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 900;
+      font-size: 0.78rem;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .caption-main-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: #0f172a;
+    }
+
+    .caption-sub-text {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-left: 4px;
+    }
+
+    /* Bottom Video Timeline Bar */
+    .timeline-track {
+      height: 7px;
+      width: 100%;
+      background: #e2e8f0;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .timeline-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #004b93, #0284c7, #10b981);
+      width: 0%;
+      transition: width 0.15s linear;
+    }
+
+    /* Scene Chips Bar */
+    .scenes-bar {
+      width: 100%;
+      max-width: 1100px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .scene-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.75rem;
+      border-radius: 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .scene-btn.active {
+      border-color: #004b93;
+      background: #f0f7ff;
+      box-shadow: 0 2px 6px rgba(0, 75, 147, 0.1);
+    }
+    .scene-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #0284c7;
+    }
+    .scene-name {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Final CTA Screen (Scene 6) */
+    .cta-container {
+      text-align: center;
+      background: #ffffff;
+      padding: 2.5rem 3.5rem;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Controller Bar -->
+  <div class="top-bar">
+    <div class="top-title">
+      <span>📹</span> 1-Minute Realistic Office Demonstration (Light Corporate Theme)
+    </div>
+    <div class="controls-wrap">
+      <button id="playBtn" class="btn btn-primary" onclick="togglePlay()">
+        ▶ Play 60s Video
+      </button>
+      <button class="btn btn-outline" onclick="resetVideo()">
+        ↺ Restart
+      </button>
+      <button class="btn btn-outline" onclick="toggleVoice()">
+        <span id="voiceIcon">🔊</span> <span id="voiceLabel">Voice: Natural English</span>
+      </button>
+      <button class="btn btn-outline" onclick="toggleFullscreen()">
+        ⛶ Fullscreen
+      </button>
+    </div>
+  </div>
+
+  <!-- Main 16:9 Realistic Video Viewport -->
+  <div class="video-frame" id="videoFrame">
+
+    <!-- Header with SaNDS Lab on Left & UNV on Right -->
+    <div class="video-header">
+      <div class="logo-left">
+        <img src="frontend/public/video_assets/sands_logo.png" alt="SaNDS Lab" onerror="this.style.display='none'; document.getElementById('sandsFallback').style.display='block';">
+        <div id="sandsFallback" class="logo-left-fallback" style="display: none;">
+          SaNDS <span style="color:#2563eb">Lab</span>
+        </div>
+      </div>
+
+      <!-- Center Subtle Device Badge -->
+      <div style="font-size: 0.76rem; font-weight: 700; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 14px; border-radius: 20px;">
+        Main Office Entrance • Live Biometric AI
+      </div>
+
+      <div class="logo-right">
+        <div class="unv-logo-pill">
+          <div class="unv-text">unv</div>
+          <div style="height: 18px; width: 1px; background: #bae0ff;"></div>
+          <div class="unv-subtitle">Uniview CCTV</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live CCTV Camera Watermark Tag -->
+    <div class="live-camera-tag">
+      <span class="red-dot"></span>
+      <span id="cameraLabel">UNV CCTV • GATE 1 (IN) • 1080P HD</span>
+      <span style="opacity: 0.4">|</span>
+      <span id="clockDisplay">08:29:45 AM</span>
+    </div>
+
+    <!-- Big Center Play Button Overlay -->
+    <div class="big-play-overlay" id="bigPlayOverlay" onclick="play()">
+      <div class="big-play-btn">▶</div>
+      <div class="big-play-text">Click to Play 60-Second Video</div>
+    </div>
+
+    <!-- Video Stage / 6 Realistic Animated Scenes -->
+    <div class="video-stage" onclick="togglePlay()">
+
+      <!-- ========================================================
+           SCENE 1: 0:00 - 0:12 (Arab Executive Arrives at Office)
+           ======================================================== -->
+      <div class="scene active" id="scene-0">
+        <img src="frontend/public/video_assets/arab_cctv_16_9_1792826233228.jpg?v=2" class="scene-image-bg" alt="Arab Executive Entering Office">
+        
+        <!-- Exact Face Detection Green Bracket Centered on Tariq's Face -->
+        <div class="face-bracket" style="top: 11%; left: 58.5%; width: 9%; height: 19%;">
+          <div class="bracket-corner bc-tl"></div>
+          <div class="bracket-corner bc-tr"></div>
+          <div class="bracket-corner bc-bl"></div>
+          <div class="bracket-corner bc-br"></div>
+          <div class="bracket-scan-line"></div>
+          <div class="bracket-name-pill">
+            <span>✓</span> Tariq Al-Hashimi (IT Manager) • 99.4%
+          </div>
+        </div>
+
+        <!-- Live Punch Notification Toast -->
+        <div class="punch-toast">
+          <img src="frontend/public/video_assets/arab_cctv_16_9_1792826233228.jpg?v=2" class="punch-toast-avatar" style="object-position: 63% 18%;" alt="Tariq">
+          <div>
+            <div class="punch-toast-name">Tariq Al-Hashimi • <span style="color:#059669">Clock In</span></div>
+            <div class="punch-toast-sub">08:29 AM • Gate 1 (Reception) • On-Time</div>
+          </div>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption">
+          <div class="caption-step-num">1</div>
+          <div class="caption-main-text">Walk through naturally.</div>
+          <div class="caption-sub-text">No stopping. No cards. Recognized in 0.5 seconds.</div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           SCENE 2: 0:12 - 0:24 (Mixed Team Arrives Without Queuing)
+           ======================================================== -->
+      <div class="scene" id="scene-1">
+        <img src="frontend/public/video_assets/asian_team_16_9_1792826275941.jpg?v=2" class="scene-image-bg" alt="Asian Engineer and Colleagues">
+        
+        <!-- Exact Face Detection Green Bracket on Priya Sharma's Face -->
+        <div class="face-bracket" style="top: 19.5%; left: 47%; width: 7.5%; height: 15.5%;">
+          <div class="bracket-corner bc-tl"></div>
+          <div class="bracket-corner bc-tr"></div>
+          <div class="bracket-corner bc-bl"></div>
+          <div class="bracket-corner bc-br"></div>
+          <div class="bracket-scan-line"></div>
+          <div class="bracket-name-pill">
+            <span>✓</span> Priya Sharma (Engineer) • 99.1%
+          </div>
+        </div>
+
+        <!-- Second Simultaneous Bracket on Colleague David Lee -->
+        <div class="face-bracket" style="top: 24.5%; left: 81.5%; width: 6%; height: 13%; border-color: #0284c7; box-shadow: 0 0 20px rgba(2, 132, 199, 0.5);">
+          <div class="bracket-name-pill" style="background: #0284c7;">
+            <span>✓</span> David Lee • 98.8%
+          </div>
+        </div>
+
+        <!-- Live Punch Notification Toast -->
+        <div class="punch-toast">
+          <img src="frontend/public/video_assets/asian_team_16_9_1792826275941.jpg?v=2" class="punch-toast-avatar" style="object-position: 50% 25%;" alt="Priya">
+          <div>
+            <div class="punch-toast-name">Priya Sharma • <span style="color:#059669">Clock In</span></div>
+            <div class="punch-toast-sub">08:31 AM • Gate 1 (Main Entrance) • Verified</div>
+          </div>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption">
+          <div class="caption-step-num">2</div>
+          <div class="caption-main-text">Zero morning queues.</div>
+          <div class="caption-sub-text">Staff walk together with coffee — all marked instantly.</div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           SCENE 3: 0:24 - 0:36 (Automated Daily Timesheet Updates)
+           ======================================================== -->
+      <div class="scene" id="scene-2">
+        <div class="timesheet-mockup">
+          <div class="mockup-header">
+            <div class="mockup-title">
+              <span>📊</span> Live Office Attendance &amp; Timesheet (Today)
+            </div>
+            <div style="font-size: 0.78rem; color: #059669; font-weight: 700; background: #ecfdf5; padding: 3px 10px; border-radius: 12px;">
+              ● Real-Time Auto Sync
+            </div>
+          </div>
+
+          <table class="mockup-table">
+            <thead>
+              <tr>
+                <th>Employee Name</th>
+                <th>Department</th>
+                <th>In Time</th>
+                <th>Gate / Camera</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Tariq Al-Hashimi</strong></td>
+                <td>IT Infrastructure</td>
+                <td style="color:#059669; font-weight: 700;">08:29:12 AM</td>
+                <td>Gate 1 (UNV CCTV)</td>
+                <td><span class="badge-present">✓ Present (On-Time)</span></td>
+              </tr>
+              <tr>
+                <td><strong>Priya Sharma</strong></td>
+                <td>Software Engineering</td>
+                <td style="color:#059669; font-weight: 700;">08:31:05 AM</td>
+                <td>Gate 1 (UNV CCTV)</td>
+                <td><span class="badge-present">✓ Present (On-Time)</span></td>
+              </tr>
+              <tr>
+                <td><strong>David Lee</strong></td>
+                <td>Operations</td>
+                <td style="color:#059669; font-weight: 700;">08:31:07 AM</td>
+                <td>Gate 1 (UNV CCTV)</td>
+                <td><span class="badge-present">✓ Present (On-Time)</span></td>
+              </tr>
+              <tr>
+                <td><strong>Fatima Al-Dossary</strong></td>
+                <td>Human Resources</td>
+                <td style="color:#059669; font-weight: 700;">08:33:40 AM</td>
+                <td>Gate 2 (Lobby)</td>
+                <td><span class="badge-present">✓ Present (On-Time)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption">
+          <div class="caption-step-num">3</div>
+          <div class="caption-main-text">Clean, accurate timesheets.</div>
+          <div class="caption-sub-text">In-time, out-time, and work hours compiled automatically.</div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           SCENE 4: 0:36 - 0:48 (Visitor Arrives & Logged Automatically)
+           ======================================================== -->
+      <div class="scene" id="scene-3">
+        <div class="visitor-mockup-card">
+          <div class="visitor-snapshot-box">
+            <img src="frontend/public/video_assets/asian_visitor_reception_1792825503803.jpg?v=2" alt="Visitor Arrival Snapshot">
+            <!-- Detection Box on Visitor Face -->
+            <div class="face-bracket" style="top: 20%; left: 63%; width: 22%; height: 35%; border-color: #0284c7; box-shadow: 0 0 15px rgba(2, 132, 199, 0.5);">
+              <div class="bracket-name-pill" style="background: #0284c7; font-size: 0.65rem; padding: 2px 7px; bottom: -24px;">
+                <span>👤</span> Visitor #GST-1042
+              </div>
+            </div>
+            <div style="position: absolute; bottom: 8px; left: 8px; background: rgba(2, 132, 199, 0.9); color: #fff; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 4px;">
+              PHOTO CAPTURED
+            </div>
+          </div>
+
+          <div>
+            <div style="display: inline-block; background: #e0f2fe; color: #0369a1; font-size: 0.74rem; font-weight: 800; padding: 3px 10px; border-radius: 12px; margin-bottom: 0.5rem;">
+              👤 GUEST / VISITOR DETECTED
+            </div>
+            <h3 style="font-family: 'Outfit'; font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-bottom: 0.35rem;">
+              Automatic Visitor Logging
+            </h3>
+            <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem; line-height: 1.45;">
+              Unregistered visitor walks in. The CCTV camera logs their arrival time, assigns Guest ID <strong style="color:#0f172a">#GST-1042</strong>, and records their high-res photo.
+            </p>
+
+            <div style="display: flex; gap: 1rem; font-size: 0.8rem; background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 14px; border-radius: 8px;">
+              <div><strong>Time:</strong> 08:35 AM</div>
+              <div><strong>Location:</strong> Reception</div>
+              <div><strong>Status:</strong> Safe Entry</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption">
+          <div class="caption-step-num">4</div>
+          <div class="caption-main-text">Visitor Intelligence.</div>
+          <div class="caption-sub-text">Know exactly who entered your building with photo logs.</div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           SCENE 5: 0:48 - 0:56 (Evening Departure / OUT Gate)
+           ======================================================== -->
+      <div class="scene" id="scene-4">
+        <img src="frontend/public/video_assets/arab_cctv_16_9_1792826233228.jpg?v=2" class="scene-image-bg" style="filter: brightness(0.92) contrast(1.05);" alt="Evening Departure">
+        
+        <!-- Amber Face Detection Bracket on Tariq's Face (Exit Tracking) -->
+        <div class="face-bracket" style="top: 11%; left: 58.5%; width: 9%; height: 19%; border-color: #f59e0b; box-shadow: 0 0 25px rgba(245, 158, 11, 0.5), inset 0 0 15px rgba(245, 158, 11, 0.25);">
+          <div class="bracket-corner bc-tl" style="border-color: #fbbf24;"></div>
+          <div class="bracket-corner bc-tr" style="border-color: #fbbf24;"></div>
+          <div class="bracket-corner bc-bl" style="border-color: #fbbf24;"></div>
+          <div class="bracket-corner bc-br" style="border-color: #fbbf24;"></div>
+          <div class="bracket-scan-line" style="background: linear-gradient(90deg, transparent, #fbbf24, transparent); box-shadow: 0 0 8px #fbbf24;"></div>
+          <div class="bracket-name-pill" style="background: #d97706;">
+            <span>✓</span> Tariq Al-Hashimi (Clock Out)
+          </div>
+        </div>
+
+        <!-- Live Punch Notification Toast for OUT -->
+        <div class="punch-toast" style="border-left-color: #f59e0b;">
+          <img src="frontend/public/video_assets/arab_cctv_16_9_1792826233228.jpg?v=2" class="punch-toast-avatar" style="border-color: #f59e0b; object-position: 63% 18%;" alt="Tariq Out">
+          <div>
+            <div class="punch-toast-name">Tariq Al-Hashimi • <span style="color:#d97706">Clock Out</span></div>
+            <div class="punch-toast-sub">05:01 PM • Gate 2 (Exit) • Total: 8h 32m</div>
+          </div>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption">
+          <div class="caption-step-num">5</div>
+          <div class="caption-main-text">Automatic Entry &amp; Exit.</div>
+          <div class="caption-sub-text">Accurate work hours ready for payroll in one click.</div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           SCENE 6: 0:56 - 1:00 (Call to Action & Partnership)
+           ======================================================== -->
+      <div class="scene" id="scene-5">
+        <div class="cta-container">
+          <!-- Both Logos Centered -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 2rem; margin-bottom: 1.5rem;">
+            <img src="frontend/public/video_assets/sands_logo.png" style="height: 48px; object-fit: contain;" alt="SaNDS Lab" onerror="this.style.display='none';">
+            <div style="height: 32px; width: 2px; background: #e2e8f0;"></div>
+            <div style="display: flex; align-items: center; gap: 6px; background: #f0f7ff; border: 1px solid #bae0ff; padding: 6px 16px; border-radius: 10px;">
+              <span style="font-family: 'Outfit'; font-weight: 900; font-size: 1.5rem; color: #0066b3;">unv</span>
+              <span style="font-size: 0.8rem; font-weight: 700; color: #0369a1; text-transform: uppercase;">Uniview</span>
+            </div>
+          </div>
+
+          <h2 style="font-family: 'Outfit'; font-size: 2.1rem; font-weight: 900; color: #0f172a; margin-bottom: 0.5rem;">
+            Smart Face Attendance for Your Office
+          </h2>
+          <p style="font-size: 1rem; color: #64748b; max-width: 560px; margin: 0 auto 1.5rem; line-height: 1.5;">
+            Zero queues. Zero cards. Uses standard UNV CCTV cameras. 100% on-premise privacy with no monthly fees.
+          </p>
+
+          <div style="display: inline-flex; align-items: center; gap: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 24px; border-radius: 30px;">
+            <span style="font-weight: 800; color: #004b93;">SaNDS Lab Middle East</span>
+            <span style="color:#cbd5e1">|</span>
+            <span style="font-family: 'JetBrains Mono'; color: #0284c7; font-weight: 700;">www.sandslab.me</span>
+          </div>
+        </div>
+
+        <!-- Small Dynamic Caption -->
+        <div class="floating-caption" style="bottom: 20px;">
+          <div class="caption-step-num">✓</div>
+          <div class="caption-main-text">Upgrade your workplace today.</div>
+          <div class="caption-sub-text">Contact SaNDS Lab for a free live demonstration.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Timeline Progress Fill -->
+    <div class="timeline-track" onclick="seekVideo(event)">
+      <div class="timeline-fill" id="timelineFill"></div>
+    </div>
+  </div>
+
+  <!-- Scene Navigator Chips (1 to 6) -->
+  <div class="scenes-bar">
+    <div class="scene-btn active" onclick="jumpTo(0)">
+      <div class="scene-time">0:00 - 0:12</div>
+      <div class="scene-name">1. Morning Arrival</div>
+    </div>
+    <div class="scene-btn" onclick="jumpTo(1)">
+      <div class="scene-time">0:12 - 0:24</div>
+      <div class="scene-name">2. No Morning Queues</div>
+    </div>
+    <div class="scene-btn" onclick="jumpTo(2)">
+      <div class="scene-time">0:24 - 0:36</div>
+      <div class="scene-name">3. Live Timesheet</div>
+    </div>
+    <div class="scene-btn" onclick="jumpTo(3)">
+      <div class="scene-time">0:36 - 0:48</div>
+      <div class="scene-name">4. Visitor Log</div>
+    </div>
+    <div class="scene-btn" onclick="jumpTo(4)">
+      <div class="scene-time">0:48 - 0:56</div>
+      <div class="scene-name">5. Exit Tracking</div>
+    </div>
+    <div class="scene-btn" onclick="jumpTo(5)">
+      <div class="scene-time">0:56 - 1:00</div>
+      <div class="scene-name">6. Partnership &amp; CTA</div>
+    </div>
+  </div>
+
+  <script>
+    // 60-Second Realistic Office Storyboard Configuration
+    const timeline = [
+      {
+        start: 0,
+        end: 12,
+        sceneIndex: 0,
+        camera: "UNV CCTV • MAIN ENTRANCE (IN)",
+        time: "08:29 AM",
+        spoken: "Good morning! As Tariq walks through the entrance, the UNV camera spots his face and logs attendance instantly. No stopping. No card."
+      },
+      {
+        start: 12,
+        end: 24,
+        sceneIndex: 1,
+        camera: "UNV CCTV • LOBBY GATE 1",
+        time: "08:31 AM",
+        spoken: "When multiple employees walk in together chatting with coffee, everyone is identified side-by-side. Zero queues at the door."
+      },
+      {
+        start: 24,
+        end: 36,
+        sceneIndex: 2,
+        camera: "SYSTEM • LIVE TIMESHEET",
+        time: "08:33 AM",
+        spoken: "On the manager's screen, the daily timesheet updates in real-time. In-time, out-time, and work hours are automatically organized."
+      },
+      {
+        start: 36,
+        end: 48,
+        sceneIndex: 3,
+        camera: "UNV CCTV • RECEPTION DESK",
+        time: "08:35 AM",
+        spoken: "When a new visitor arrives, the system detects a guest and creates a photo record with their arrival time. Safe and welcoming."
+      },
+      {
+        start: 48,
+        end: 56,
+        sceneIndex: 4,
+        camera: "UNV CCTV • EXIT GATE (OUT)",
+        time: "05:01 PM",
+        spoken: "In the evening, staff exit through the door. Total work hours are calculated cleanly, ready for stress-free payroll."
+      },
+      {
+        start: 56,
+        end: 60,
+        sceneIndex: 5,
+        camera: "SANDS LAB & UNV PARTNERSHIP",
+        time: "SUMMARY",
+        spoken: "Smarter attendance powered by SaNDS Lab and UNV CCTV. Contact SaNDS Lab today for your free live demonstration."
+      }
+    ];
+
+    let currentSec = 0;
+    const totalDuration = 60;
+    let isPlaying = false;
+    let interval = null;
+    let voiceEnabled = true;
+    let activeSceneIdx = -1;
+    let audioCtx = null;
+
+    // Pleasant Biometric Verification Chime (Soft 2-tone chime)
+    function playChime() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const now = audioCtx.currentTime;
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        gain1.gain.setValueAtTime(0.08, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.35);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(659.25, now + 0.12); // E5
+        gain2.gain.setValueAtTime(0.08, now + 0.12);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.12);
+        osc2.stop(now + 0.55);
+      } catch (e) {
+        // AudioContext not allowed before user interaction
+      }
+    }
+
+    function speakNarration(text) {
+      if (!voiceEnabled) return;
+      try {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.rate = 1.05;
+          utterance.pitch = 1.0;
+          const voices = window.speechSynthesis.getVoices();
+          const natVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('David') || v.name.includes('Zira')));
+          if (natVoice) utterance.voice = natVoice;
+          window.speechSynthesis.speak(utterance);
+        }
+      } catch (err) {
+        console.warn('Speech synthesis notice:', err);
+      }
+    }
+
+    function render() {
+      // Progress bar fill
+      const pct = (currentSec / totalDuration) * 100;
+      document.getElementById('timelineFill').style.width = pct + '%';
+
+      // Find current active scene
+      const found = timeline.find(t => currentSec >= t.start && currentSec < t.end);
+      const active = found || timeline[timeline.length - 1];
+
+      // Update camera tag and time
+      document.getElementById('cameraLabel').textContent = active.camera;
+      
+      // Calculate realistic ticking clock
+      const totalSecOffset = Math.floor(currentSec);
+      const startMinutes = 29;
+      const curM = (startMinutes + Math.floor(totalSecOffset / 12)) % 60;
+      const curS = (totalSecOffset * 3) % 60;
+      const padS = curS < 10 ? '0' + curS : curS;
+      const padM = curM < 10 ? '0' + curM : curM;
+      document.getElementById('clockDisplay').textContent = `08:${padM}:${padS} AM`;
+
+      // Update Play Button text with seconds if running
+      if (isPlaying) {
+        const secsLeft = Math.floor(currentSec);
+        document.getElementById('playBtn').innerHTML = `⏸ Pause (${secsLeft}s / 60s)`;
+      }
+
+      if (active.sceneIndex !== activeSceneIdx) {
+        activeSceneIdx = active.sceneIndex;
+
+        // Switch active scene
+        document.querySelectorAll('.scene').forEach((sc, i) => {
+          sc.classList.toggle('active', i === activeSceneIdx);
+        });
+
+        // Switch active scene button
+        document.querySelectorAll('.scene-btn').forEach((btn, i) => {
+          btn.classList.toggle('active', i === activeSceneIdx);
+        });
+
+        // Play subtle confirmation chime on detection
+        if (isPlaying && (activeSceneIdx === 0 || activeSceneIdx === 1 || activeSceneIdx === 3)) {
+          playChime();
+        }
+
+        // Speak plain, friendly English narration
+        if (isPlaying) {
+          speakNarration(active.spoken);
+        }
+      }
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        pause();
+      } else {
+        play();
+      }
+    }
+
+    function play() {
+      if (currentSec >= totalDuration) {
+        currentSec = 0;
+        activeSceneIdx = -1;
+      }
+      isPlaying = true;
+      document.getElementById('playBtn').innerHTML = '⏸ Pause Video';
+      document.getElementById('playBtn').className = 'btn btn-outline';
+      
+      const bigPlay = document.getElementById('bigPlayOverlay');
+      if (bigPlay) bigPlay.style.display = 'none';
+
+      if (interval) clearInterval(interval);
+
+      // Trigger initial scene audio & chime
+      const currentActive = timeline.find(t => currentSec >= t.start && currentSec < t.end) || timeline[0];
+      playChime();
+      speakNarration(currentActive.spoken);
+
+      interval = setInterval(() => {
+        currentSec += 0.2;
+        if (currentSec >= totalDuration) {
+          currentSec = totalDuration;
+          pause();
+        }
+        render();
+      }, 200);
+
+      render();
+    }
+
+    function pause() {
+      isPlaying = false;
+      if (interval) clearInterval(interval);
+      
+      const bigPlay = document.getElementById('bigPlayOverlay');
+      if (bigPlay) {
+        if (currentSec >= totalDuration) {
+          bigPlay.innerHTML = `
+            <div class="big-play-btn" style="padding-left: 0;">↺</div>
+            <div class="big-play-text">↺ Click to Replay Video</div>
+          `;
+          document.getElementById('playBtn').innerHTML = '↺ Replay 60s Video';
+          document.getElementById('playBtn').className = 'btn btn-primary';
+        } else {
+          bigPlay.innerHTML = `
+            <div class="big-play-btn">▶</div>
+            <div class="big-play-text">Click to Play 60-Second Video</div>
+          `;
+          document.getElementById('playBtn').innerHTML = '▶ Play 60s Video';
+          document.getElementById('playBtn').className = 'btn btn-primary';
+        }
+        bigPlay.style.display = 'flex';
+      }
+
+      try {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
+
+    function resetVideo() {
+      pause();
+      currentSec = 0;
+      activeSceneIdx = -1;
+      const bigPlay = document.getElementById('bigPlayOverlay');
+      if (bigPlay) {
+        bigPlay.innerHTML = `
+          <div class="big-play-btn">▶</div>
+          <div class="big-play-text">Click to Play 60-Second Video</div>
+        `;
+        bigPlay.style.display = 'flex';
+      }
+      document.getElementById('playBtn').innerHTML = '▶ Play 60s Video';
+      render();
+    }
+
+    function jumpTo(idx) {
+      pause();
+      currentSec = timeline[idx].start;
+      activeSceneIdx = -1;
+      render();
+    }
+
+    function seekVideo(e) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      currentSec = Math.max(0, Math.min(totalDuration, pos * totalDuration));
+      activeSceneIdx = -1;
+      render();
+    }
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      document.getElementById('voiceIcon').textContent = voiceEnabled ? '🔊' : '🔇';
+      document.getElementById('voiceLabel').textContent = voiceEnabled ? 'Voice: Natural English' : 'Voice: Muted';
+      if (!voiceEnabled && 'speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+    }
+
+    function toggleFullscreen() {
+      const el = document.getElementById('videoFrame');
+      if (!document.fullscreenElement) {
+        el.requestFullscreen().catch(err => alert(err.message));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleFullscreen();
+      }
+    });
+
+    window.addEventListener('load', () => {
+      render();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = () => {};
+      }
+    });
+  </script>
+</body>
+</html>

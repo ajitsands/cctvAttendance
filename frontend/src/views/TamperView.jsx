@@ -16,26 +16,35 @@ import {
   Maximize2,
   Lock,
   UserX,
-  Smartphone
+  Smartphone,
+  Archive,
+  Trash2,
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import { api } from '../api';
 import { useDialog } from '../context/DialogContext';
 
 export default function TamperView() {
-  const { showConfirm, showToast } = useDialog();
+  const { confirm, toast } = useDialog();
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({
     total_tamper_count: 0,
     today_tamper_count: 0,
-    unreviewed_count: 0
+    unreviewed_count: 0,
+    reviewed_count: 0,
+    archived_count: 0
   });
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSnapshot, setSelectedSnapshot] = useState(null);
   const [reviewModalItem, setReviewModalItem] = useState(null);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [archiveAlsoInModal, setArchiveAlsoInModal] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const fetchTamperLogs = async () => {
     try {
@@ -49,18 +58,21 @@ export default function TamperView() {
         setStats(res.data.stats || {
           total_tamper_count: 0,
           today_tamper_count: 0,
-          unreviewed_count: 0
+          unreviewed_count: 0,
+          reviewed_count: 0,
+          archived_count: 0
         });
       }
     } catch (err) {
       console.error('Error fetching tamper logs:', err);
-      showToast('Failed to load tamper incident logs', 'error');
+      toast.error('Failed to load tamper incident logs');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    setSelectedIds([]);
     fetchTamperLogs();
     const interval = setInterval(fetchTamperLogs, 5000);
     return () => clearInterval(interval);
@@ -71,24 +83,110 @@ export default function TamperView() {
     if (!reviewModalItem) return;
     try {
       setSubmittingReview(true);
-      await api.reviewTamperLog(reviewModalItem.id, reviewNotes, 'Security Administrator');
-      showToast('Tamper incident successfully acknowledged & reviewed', 'success');
+      await api.reviewTamperLog(reviewModalItem.id, reviewNotes, 'Security Administrator', archiveAlsoInModal);
+      toast.success(
+        archiveAlsoInModal 
+          ? 'Tamper incident acknowledged & moved to Archive Vault' 
+          : 'Tamper incident successfully acknowledged & reviewed'
+      );
       setReviewModalItem(null);
       setReviewNotes('');
+      setArchiveAlsoInModal(false);
       fetchTamperLogs();
     } catch (err) {
-      showToast('Error reviewing incident', 'error');
+      toast.error('Error reviewing incident');
     } finally {
       setSubmittingReview(false);
     }
   };
 
-  const handleSimulateTamper = async () => {
-    const confirmed = await showConfirm(
-      'Simulate Photo Presentation Attack',
-      'This will simulate someone presenting a mobile phone photo of an employee to the Main Gate camera. The system will block the attendance punch and capture the whole screen. Proceed?'
+  const handleArchive = async (idOrIds) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+    const isConfirmed = await confirm({
+      title: 'Archive Tamper Incident?',
+      message: `Move ${ids.length} selected tamper record${ids.length > 1 ? 's' : ''} to the Archive Vault? You can still view or restore them anytime under the Archived tab.`,
+      confirmText: 'Move to Archive',
+      isDanger: false
+    });
+    if (!isConfirmed) return;
+
+    try {
+      setActionLoading(true);
+      await api.archiveTamperLog(ids);
+      toast.success(`${ids.length} incident${ids.length > 1 ? 's' : ''} moved to Archive Vault`);
+      setSelectedIds([]);
+      fetchTamperLogs();
+    } catch (err) {
+      toast.error('Failed to archive incident');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRestore = async (idOrIds) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await api.restoreTamperLog(ids);
+      toast.success(`${ids.length} incident${ids.length > 1 ? 's' : ''} restored back to active logs`);
+      setSelectedIds([]);
+      fetchTamperLogs();
+    } catch (err) {
+      toast.error('Failed to restore incident');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async (idOrIds) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+    const isConfirmed = await confirm({
+      title: 'Permanently Delete Incident?',
+      message: `Are you sure you want to permanently delete ${ids.length} tamper record${ids.length > 1 ? 's' : ''} and full-frame camera evidence? This action CANNOT be undone.`,
+      confirmText: 'Permanently Delete',
+      isDanger: true
+    });
+    if (!isConfirmed) return;
+
+    try {
+      setActionLoading(true);
+      await api.deleteTamperLog(ids);
+      toast.success(`${ids.length} incident${ids.length > 1 ? 's' : ''} permanently deleted`);
+      setSelectedIds([]);
+      fetchTamperLogs();
+    } catch (err) {
+      toast.error('Failed to delete incident');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const toggleSelectAll = (items) => {
+    if (selectedIds.length === items.length && items.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(items.map(l => l.id));
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
-    if (!confirmed) return;
+  };
+
+  const handleSimulateTamper = async () => {
+    const isConfirmed = await confirm({
+      title: 'Simulate Photo Presentation Attack',
+      message: 'This will simulate someone presenting a mobile phone photo of an employee to the Main Gate camera. The system will block the attendance punch and capture the whole screen. Proceed?',
+      confirmText: 'Simulate Attack',
+      isDanger: false
+    });
+    if (!isConfirmed) return;
 
     try {
       await api.logTamperTest({
@@ -104,10 +202,10 @@ export default function TamperView() {
         confidence_score: 96.8,
         snapshot: ''
       });
-      showToast('Tamper attempt simulated and blocked! Whole screen capture logged.', 'warning');
+      toast.warning('Tamper attempt simulated and blocked! Whole screen capture logged.');
       fetchTamperLogs();
     } catch (err) {
-      showToast('Failed to trigger simulation', 'error');
+      toast.error('Failed to trigger simulation');
     }
   };
 
@@ -191,7 +289,7 @@ export default function TamperView() {
       </div>
 
       {/* Metric Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
         <div className="card" style={{ borderLeft: '4px solid #ef4444' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Attacks Blocked</span>
@@ -205,22 +303,9 @@ export default function TamperView() {
           <span style={{ fontSize: '0.76rem', color: '#ef4444', fontWeight: 600 }}>Zero False Attendance Allowed</span>
         </div>
 
-        <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Today's Incidents</span>
-            <div style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '6px', borderRadius: '8px' }}>
-              <Calendar size={18} />
-            </div>
-          </div>
-          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '0.4rem' }}>
-            {stats.today_tamper_count}
-          </div>
-          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Recorded on all active gates</span>
-        </div>
-
         <div className="card" style={{ borderLeft: '4px solid #ec4899' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Unreviewed Security Alerts</span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Unreviewed Alerts</span>
             <div style={{ color: '#ec4899', background: 'rgba(236, 72, 153, 0.1)', padding: '6px', borderRadius: '8px' }}>
               <AlertTriangle size={18} />
             </div>
@@ -235,15 +320,28 @@ export default function TamperView() {
 
         <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Anti-Spoof Defense Engine</span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Reviewed Incidents</span>
             <div style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '6px', borderRadius: '8px' }}>
-              <ShieldCheck size={18} />
+              <CheckCircle size={18} />
             </div>
           </div>
-          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981', marginTop: '0.75rem' }}>
-            ACTIVE (Multi-Cue)
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '0.4rem' }}>
+            {stats.reviewed_count || 0}
           </div>
-          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Moiré • Glare • Rigidity Analysis</span>
+          <span style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600 }}>Acknowledged by Security</span>
+        </div>
+
+        <div className="card" style={{ borderLeft: '4px solid #6366f1' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Archived Vault</span>
+            <div style={{ color: '#6366f1', background: 'rgba(99, 102, 241, 0.1)', padding: '6px', borderRadius: '8px' }}>
+              <Archive size={18} />
+            </div>
+          </div>
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '0.4rem' }}>
+            {stats.archived_count || 0}
+          </div>
+          <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Historical Attack Ledger</span>
         </div>
       </div>
 
@@ -262,14 +360,14 @@ export default function TamperView() {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{ display: 'flex', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', padding: '3px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', padding: '3px', flexWrap: 'wrap', gap: '2px' }}>
               <button
                 className={`btn btn-sm ${statusFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setStatusFilter('all')}
                 style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
               >
-                All Attacks ({stats.total_tamper_count})
+                All Active ({stats.total_tamper_count})
               </button>
               <button
                 className={`btn btn-sm ${statusFilter === 'unreviewed' ? 'btn-primary' : 'btn-ghost'}`}
@@ -277,6 +375,20 @@ export default function TamperView() {
                 style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
               >
                 Unreviewed ({stats.unreviewed_count})
+              </button>
+              <button
+                className={`btn btn-sm ${statusFilter === 'reviewed' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setStatusFilter('reviewed')}
+                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+              >
+                Reviewed ({stats.reviewed_count || 0})
+              </button>
+              <button
+                className={`btn btn-sm ${statusFilter === 'archived' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setStatusFilter('archived')}
+                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+              >
+                Archived ({stats.archived_count || 0})
               </button>
             </div>
           </div>
@@ -296,14 +408,70 @@ export default function TamperView() {
           </div>
         </div>
 
+        {/* Bulk Selection Bar */}
+        {selectedIds.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.75rem 1.5rem',
+            background: 'rgba(99, 102, 241, 0.08)',
+            borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+            flexWrap: 'wrap',
+            gap: '0.5rem'
+          }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              {selectedIds.length} incident{selectedIds.length > 1 ? 's' : ''} selected
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              {statusFilter === 'archived' ? (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => handleRestore(selectedIds)}
+                  disabled={actionLoading}
+                  style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}
+                >
+                  <RotateCcw size={13} /> Restore Selected
+                </button>
+              ) : (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => handleArchive(selectedIds)}
+                  disabled={actionLoading}
+                  style={{ color: '#6366f1', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}
+                >
+                  <Archive size={13} /> Archive Selected
+                </button>
+              )}
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => handleDelete(selectedIds)}
+                disabled={actionLoading}
+                style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}
+              >
+                <Trash2 size={13} /> Delete Selected
+              </button>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSelectedIds([])}
+                style={{ fontSize: '0.78rem' }}
+              >
+                Deselect
+              </button>
+            </div>
+          </div>
+        )}
+
         {filteredLogs.length === 0 ? (
           <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <ShieldCheck size={48} color="#10b981" style={{ margin: '0 auto 1rem', opacity: 0.8 }} />
             <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
-              No Tamper Attempts Detected
+              {statusFilter === 'archived' ? 'No Archived Incidents' : 'No Tamper Attempts Detected'}
             </h4>
             <p style={{ fontSize: '0.85rem', marginTop: '0.3rem' }}>
-              The perimeter camera streams are clean. Any photo printouts or mobile screens held to the camera will be instantly logged here.
+              {statusFilter === 'archived' 
+                ? 'Archived tamper incidents will appear here when moved out of active logs.'
+                : 'The perimeter camera streams are clean. Any photo printouts or mobile screens held to the camera will be instantly logged here.'}
             </p>
           </div>
         ) : (
@@ -311,6 +479,15 @@ export default function TamperView() {
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-muted)', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <th style={{ padding: '0.9rem 0.8rem', width: '38px', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filteredLogs.length > 0 && selectedIds.length === filteredLogs.length} 
+                      onChange={() => toggleSelectAll(filteredLogs)}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      title="Select all"
+                    />
+                  </th>
                   <th style={{ padding: '0.9rem 1.25rem' }}>Timestamp & Gate</th>
                   <th style={{ padding: '0.9rem 1.25rem' }}>Targeted Identity</th>
                   <th style={{ padding: '0.9rem 1.25rem' }}>Attack Classification</th>
@@ -334,9 +511,21 @@ export default function TamperView() {
                       key={log.id} 
                       style={{ 
                         borderBottom: '1px solid var(--border-color)',
-                        background: log.is_reviewed ? 'transparent' : 'rgba(239, 68, 68, 0.025)'
+                        background: selectedIds.includes(log.id)
+                          ? 'rgba(99, 102, 241, 0.05)'
+                          : (log.is_reviewed ? 'transparent' : 'rgba(239, 68, 68, 0.025)')
                       }}
                     >
+                      {/* Checkbox */}
+                      <td style={{ padding: '1rem 0.8rem', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(log.id)} 
+                          onChange={() => toggleSelect(log.id)}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                      </td>
+
                       {/* Timestamp & Gate */}
                       <td style={{ padding: '1rem 1.25rem' }}>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>
@@ -469,39 +658,151 @@ export default function TamperView() {
                         )}
                       </td>
 
-                      {/* Status / Review Action */}
+                      {/* Status / Review & Archive / Delete Action */}
                       <td style={{ padding: '1rem 1.25rem' }}>
-                        {log.is_reviewed ? (
-                          <div>
+                        {log.is_archived ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'flex-start' }}>
                             <span style={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
-                              color: '#10b981',
+                              color: '#6366f1',
                               fontSize: '0.78rem',
                               fontWeight: 700
                             }}>
-                              <CheckCircle size={14} /> Reviewed
+                              <Archive size={14} /> Archived
                             </span>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              {log.reviewed_by}
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '2px' }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '3px 8px',
+                                  color: '#10b981',
+                                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                                  background: 'rgba(16, 185, 129, 0.08)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleRestore(log.id)}
+                                disabled={actionLoading}
+                                title="Restore back to active logs"
+                              >
+                                <RotateCcw size={12} /> Restore
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '3px 8px',
+                                  color: '#ef4444',
+                                  borderColor: 'rgba(239, 68, 68, 0.35)',
+                                  background: 'rgba(239, 68, 68, 0.08)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleDelete(log.id)}
+                                disabled={actionLoading}
+                                title="Permanently delete incident"
+                              >
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            </div>
+                          </div>
+                        ) : log.is_reviewed ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'flex-start' }}>
+                            <div>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                color: '#10b981',
+                                fontSize: '0.78rem',
+                                fontWeight: 700
+                              }}>
+                                <CheckCircle size={14} /> Reviewed
+                              </span>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {log.reviewed_by}
+                              </div>
+                            </div>
+
+                            {/* Archive & Delete Options for Reviewed Incident */}
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '2px', alignItems: 'center' }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '3px 9px',
+                                  color: '#6366f1',
+                                  borderColor: 'rgba(99, 102, 241, 0.35)',
+                                  background: 'rgba(99, 102, 241, 0.08)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleArchive(log.id)}
+                                disabled={actionLoading}
+                                title="Archive this reviewed incident into the archive vault"
+                              >
+                                <Archive size={12} /> Archive
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '3px 9px',
+                                  color: '#ef4444',
+                                  borderColor: 'rgba(239, 68, 68, 0.35)',
+                                  background: 'rgba(239, 68, 68, 0.08)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleDelete(log.id)}
+                                disabled={actionLoading}
+                                title="Permanently delete this incident and its photo evidence"
+                              >
+                                <Trash2 size={12} /> Delete
+                              </button>
                             </div>
                           </div>
                         ) : (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{
-                              fontSize: '0.75rem',
-                              borderColor: 'rgba(239, 68, 68, 0.4)',
-                              color: '#ef4444'
-                            }}
-                            onClick={() => {
-                              setReviewModalItem(log);
-                              setReviewNotes('');
-                            }}
-                          >
-                            Acknowledge
-                          </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'flex-start' }}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{
+                                fontSize: '0.75rem',
+                                borderColor: 'rgba(239, 68, 68, 0.4)',
+                                color: '#ef4444'
+                              }}
+                              onClick={() => {
+                                setReviewModalItem(log);
+                                setReviewNotes('');
+                                setArchiveAlsoInModal(false);
+                              }}
+                            >
+                              Acknowledge
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{
+                                fontSize: '0.7rem',
+                                padding: '2px 6px',
+                                color: 'var(--text-muted)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              onClick={() => handleDelete(log.id)}
+                              disabled={actionLoading}
+                              title="Permanently delete incident"
+                            >
+                              <Trash2 size={11} /> Delete
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -622,7 +923,7 @@ export default function TamperView() {
                 Attack Reason: <strong style={{ color: '#ef4444' }}>{selectedSnapshot.reason}</strong>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center' }}>
                 <a 
                   href={selectedSnapshot.fullUrl} 
                   download={`tamper_evidence_${selectedSnapshot.id}.jpg`}
@@ -634,6 +935,47 @@ export default function TamperView() {
                   <Download size={14} />
                   Download Frame
                 </a>
+
+                {selectedSnapshot.is_reviewed && !selectedSnapshot.is_archived && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{
+                      color: '#6366f1',
+                      borderColor: 'rgba(99, 102, 241, 0.35)',
+                      background: 'rgba(99, 102, 241, 0.08)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onClick={() => {
+                      const id = selectedSnapshot.id;
+                      setSelectedSnapshot(null);
+                      handleArchive(id);
+                    }}
+                  >
+                    <Archive size={14} /> Archive
+                  </button>
+                )}
+
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    color: '#ef4444',
+                    borderColor: 'rgba(239, 68, 68, 0.35)',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  onClick={() => {
+                    const id = selectedSnapshot.id;
+                    setSelectedSnapshot(null);
+                    handleDelete(id);
+                  }}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+
                 <button 
                   className="btn btn-primary btn-sm"
                   onClick={() => setSelectedSnapshot(null)}
@@ -666,7 +1008,7 @@ export default function TamperView() {
             style={{
               background: 'var(--bg-surface)',
               borderRadius: 'var(--radius-lg)',
-              maxWidth: '500px',
+              maxWidth: '520px',
               width: '100%',
               padding: '1.75rem',
               boxShadow: '0 20px 50px rgba(0,0,0,0.4)',
@@ -686,7 +1028,7 @@ export default function TamperView() {
             </p>
 
             <form onSubmit={handleReviewSubmit}>
-              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label className="form-label">Investigation / Audit Notes</label>
                 <textarea 
                   className="textarea"
@@ -696,6 +1038,32 @@ export default function TamperView() {
                   onChange={(e) => setReviewNotes(e.target.value)}
                   style={{ width: '100%' }}
                 />
+              </div>
+
+              {/* Archive immediately option */}
+              <div style={{
+                margin: '0.75rem 0 1.25rem',
+                padding: '0.75rem 1rem',
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem'
+              }}>
+                <input 
+                  type="checkbox" 
+                  id="modalArchiveCheck"
+                  checked={archiveAlsoInModal}
+                  onChange={(e) => setArchiveAlsoInModal(e.target.checked)}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <label 
+                  htmlFor="modalArchiveCheck" 
+                  style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-main)', cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <strong>Archive incident immediately</strong> after acknowledging (moves directly into Archive Vault)
+                </label>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
@@ -712,7 +1080,7 @@ export default function TamperView() {
                   disabled={submittingReview}
                   style={{ background: '#10b981', borderColor: '#10b981' }}
                 >
-                  {submittingReview ? 'Saving...' : 'Confirm Review'}
+                  {submittingReview ? 'Saving...' : (archiveAlsoInModal ? 'Confirm & Archive' : 'Confirm Review')}
                 </button>
               </div>
             </form>

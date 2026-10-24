@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>60-Second Product Video Storyboard & Animated Showcase | SaNDS Lab Face Attendance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --accent: #ec4899;
+      --accent-glow: rgba(236, 72, 153, 0.35);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg: #0b0f19;
+      --surface: #111827;
+      --surface-light: #1f293d;
+      --border: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+
+    /* Top Control Bar */
+    .top-bar {
+      width: 100%;
+      max-width: 1080px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1.25rem;
+      background: rgba(17, 24, 39, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .brand-title {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: linear-gradient(135deg, #60a5fa, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn {
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--surface-light);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: #27354f;
+    }
+
+    /* 16:9 Video Canvas Container */
+    .video-viewport {
+      width: 100%;
+      max-width: 1080px;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
+      border: 2px solid #1e293b;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(37, 99, 235, 0.15);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Video Header Watermark */
+    .video-watermark {
+      position: absolute;
+      top: 20px;
+      left: 24px;
+      right: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .watermark-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(11, 15, 25, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 14px;
+      border-radius: 30px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .watermark-live {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #ef4444;
+      padding: 5px 12px;
+      border-radius: 30px;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.8; }
+    }
+
+    /* Slide Scenes */
+    .slide-stage {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.6s ease, transform 0.6s ease;
+      transform: scale(0.97);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 3rem 4rem;
+      text-align: center;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1);
+    }
+
+    /* Scene Styles */
+    .scene-tag {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .headline-main {
+      font-family: 'Outfit', sans-serif;
+      font-size: 3rem;
+      font-weight: 900;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      letter-spacing: -0.5px;
+    }
+
+    .highlight-red {
+      color: #f87171;
+      text-decoration: line-through;
+    }
+
+    .highlight-cyan {
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .highlight-gold {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .highlight-green {
+      color: #34d399;
+    }
+
+    .scene-subtext {
+      font-size: 1.25rem;
+      color: #cbd5e1;
+      max-width: 740px;
+      line-height: 1.5;
+    }
+
+    /* Cards / Badges Mockup inside slides */
+    .features-row {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 2rem;
+      width: 100%;
+      max-width: 860px;
+      justify-content: center;
+    }
+
+    .feature-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(8px);
+      padding: 1.2rem 1.5rem;
+      border-radius: 16px;
+      flex: 1;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    .feature-card-icon {
+      font-size: 1.8rem;
+    }
+    .feature-card-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #fff;
+    }
+    .feature-card-desc {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    /* Mock Biometric Face Detection Frame */
+    .face-detect-box {
+      width: 220px;
+      height: 220px;
+      border: 3px solid #10b981;
+      border-radius: 16px;
+      position: relative;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(0,0,0,0) 70%);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+    }
+    .corner {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-color: #34d399;
+      border-style: solid;
+    }
+    .corner-tl { top: -3px; left: -3px; border-width: 4px 0 0 4px; border-radius: 8px 0 0 0; }
+    .corner-tr { top: -3px; right: -3px; border-width: 4px 4px 0 0; border-radius: 0 8px 0 0; }
+    .corner-bl { bottom: -3px; left: -3px; border-width: 0 0 4px 4px; border-radius: 0 0 0 8px; }
+    .corner-br { bottom: -3px; right: -3px; border-width: 0 4px 4px 0; border-radius: 0 0 8px 0; }
+
+    .scan-line {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #34d399, transparent);
+      box-shadow: 0 0 15px #34d399;
+      animation: scan 2s infinite ease-in-out;
+    }
+    @keyframes scan {
+      0% { top: 15px; opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { top: 200px; opacity: 0; }
+    }
+
+    .detected-badge {
+      position: absolute;
+      bottom: -16px;
+      background: #10b981;
+      color: #000;
+      font-weight: 800;
+      font-size: 0.75rem;
+      padding: 3px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    /* Bottom Subtitle / Caption Bar (Very Prominent for Social Media & Video) */
+    .caption-banner {
+      width: 100%;
+      background: rgba(5, 8, 16, 0.88);
+      backdrop-filter: blur(14px);
+      padding: 1rem 2rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      position: relative;
+      z-index: 40;
+    }
+
+    .caption-text {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      text-align: center;
+      letter-spacing: -0.2px;
+      min-height: 2rem;
+    }
+
+    .voiceover-text {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    /* Progress Timeline Bar */
+    .timeline-container {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .timeline-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #ec4899);
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+
+    /* Scene Timeline Markers below Video */
+    .scene-navigator {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.5rem;
+      width: 100%;
+      max-width: 1080px;
+      margin-top: 1rem;
+    }
+
+    .scene-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+    }
+    .scene-chip.active {
+      border-color: var(--primary);
+      background: rgba(37, 99, 235, 0.15);
+    }
+    .scene-chip .time {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: #60a5fa;
+      font-size: 0.7rem;
+    }
+    .scene-chip .title {
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Script & Storyboard Printable Table */
+    .script-section {
+      width: 100%;
+      max-width: 1080px;
+      margin-top: 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+
+    .script-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .script-desc {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin-bottom: 1.25rem;
+    }
+
+    table.script-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+
+    table.script-table th {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      color: #94a3b8;
+      font-weight: 700;
+    }
+
+    table.script-table td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      vertical-align: top;
+      line-height: 1.5;
+    }
+
+    .time-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 2px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Action Bar -->
+  <div class="top-bar">
+    <div class="brand-title">
+      <span>🎬</span> 60-Second Video Blueprint & Animated Showcase
+    </div>
+    <div class="controls-group">
+      <button id="playPauseBtn" class="btn btn-primary" onclick="togglePlay()">
+        ▶ Play Video (60s)
+      </button>
+      <button class="btn btn-secondary" onclick="resetVideo()">
+        ↺ Restart
+      </button>
+      <button class="btn btn-secondary" onclick="toggleVoiceoverSound()">
+        🔊 <span id="voiceToggleLabel">Voice Narration: ON</span>
+      </button>
+      <button class="btn btn-secondary" onclick="toggleFullscreen()">
+        ⛶ Fullscreen
+      </button>
+    </div>
+  </div>
+
+  <!-- 16:9 Animated Video Viewport -->
+  <div class="video-viewport" id="videoViewport">
+    
+    <!-- Top Watermark & Live Indicators -->
+    <div class="video-watermark">
+      <div class="watermark-badge">
+        <span style="color:#60a5fa">SaNDS Lab</span> CCTV AI Face Attendance
+      </div>
+      <div class="watermark-live">
+        <span class="pulse-dot"></span> 0:00 / 1:00
+      </div>
+    </div>
+
+    <!-- Animated Slide Scenes -->
+    <div class="slide-stage">
+
+      <!-- Scene 1: 0:00 - 0:10 (The Frustration) -->
+      <div class="slide active" id="slide-0">
+        <div class="scene-tag">Scene 1 • 0:00 - 0:10</div>
+        <h1 class="headline-main">
+          Still Waiting in Line for <br>
+          <span class="highlight-red">Fingerprints & Cards?</span>
+        </h1>
+        <p class="scene-subtext">
+          Morning rush hour queues, forgotten punch cards, touch biometrics spreading germs, and manual visitor logs wasting precious business time.
+        </p>
+        <div class="features-row">
+          <div class="feature-card">
+            <div class="feature-card-icon">⏳</div>
+            <div class="feature-card-title">Long Queues</div>
+            <div class="feature-card-desc">Employees waiting in lines every single morning.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🪪</div>
+            <div class="feature-card-title">Forgotten Cards</div>
+            <div class="feature-card-desc">Lost RFID cards & buddy punching issues.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🦠</div>
+            <div class="feature-card-title">Touching Sensors</div>
+            <div class="feature-card-desc">Hygiene concerns and slow fingerprint readers.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 2: 0:10 - 0:20 (The Solution: Just Walk In) -->
+      <div class="slide" id="slide-1">
+        <div class="scene-tag">Scene 2 • 0:10 - 0:20</div>
+        <div class="face-detect-box">
+          <div class="corner corner-tl"></div>
+          <div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div>
+          <div class="corner corner-br"></div>
+          <div class="scan-line"></div>
+          <div style="font-size: 3.5rem;">👤</div>
+          <div class="detected-badge">✓ FACE IDENTIFIED • 99.4%</div>
+        </div>
+        <h1 class="headline-main">
+          Just <span class="highlight-cyan">Walk Naturally</span> Through the Door!
+        </h1>
+        <p class="scene-subtext">
+          Standard CCTV cameras instantly identify employees and mark attendance without stopping. 100% contactless, fast, and effortless.
+        </p>
+      </div>
+
+      <!-- Scene 3: 0:20 - 0:32 (Multi-Gate & Automated Timesheet) -->
+      <div class="slide" id="slide-2">
+        <div class="scene-tag">Scene 3 • 0:20 - 0:32</div>
+        <h1 class="headline-main">
+          Tracks <span class="highlight-green">Entry (IN)</span> & <span class="highlight-gold">Exit (OUT)</span> Automatically
+        </h1>
+        <p class="scene-subtext">
+          Pairs multiple cameras across all doors, turnstiles, and gates. Real-time work hours, late arrivals, overtime, and break durations compiled instantly.
+        </p>
+        <div class="features-row">
+          <div class="feature-card">
+            <div class="feature-card-icon">🚪</div>
+            <div class="feature-card-title">Multi-Gate Tracking</div>
+            <div class="feature-card-desc">Automatic IN & OUT matching without any manual cards.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">📊</div>
+            <div class="feature-card-title">Live Timesheets</div>
+            <div class="feature-card-desc">Accurate work hours, overtime, and outing breaks.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">⚡</div>
+            <div class="feature-card-title">1-Click Payroll Sync</div>
+            <div class="feature-card-desc">Exports directly to Excel, PDF, or your existing HR system.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 4: 0:32 - 0:45 (Security Alerts & Visitor Tracking) -->
+      <div class="slide" id="slide-3">
+        <div class="scene-tag">Scene 4 • 0:32 - 0:45</div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); padding: 6px 16px; border-radius: 30px; color: #ef4444; font-weight: 800; margin-bottom: 1rem;">
+          🚨 REAL-TIME SECURITY BLACKLIST ALERT
+        </div>
+        <h1 class="headline-main">
+          Instant Security & <span class="highlight-cyan">Visitor Tracking</span>
+        </h1>
+        <p class="scene-subtext">
+          Immediate intruder alerts if a blacklisted person appears. Automatic visitor logs capture full surveillance photos so you know exactly who visited.
+        </p>
+        <div class="features-row">
+          <div class="feature-card" style="border-color: rgba(239, 68, 68, 0.3);">
+            <div class="feature-card-icon">🛡️</div>
+            <div class="feature-card-title" style="color: #f87171;">Blacklist Breach Alert</div>
+            <div class="feature-card-desc">Audible alarms & instant snapshots of unauthorized intruders.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">📸</div>
+            <div class="feature-card-title">Wide-Angle Scene Photo</div>
+            <div class="feature-card-desc">Captures the whole entrance view for complete audit records.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🚫</div>
+            <div class="feature-card-title">Anti-Spoofing AI</div>
+            <div class="feature-card-desc">Blocks paper photos, phone screens, and video playback attacks.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 5: 0:45 - 0:52 (Works with Your Cameras & 100% Offline) -->
+      <div class="slide" id="slide-4">
+        <div class="scene-tag">Scene 5 • 0:45 - 0:52</div>
+        <h1 class="headline-main">
+          Uses <span class="highlight-gold">Your Existing CCTV</span> • Zero Monthly Fees!
+        </h1>
+        <p class="scene-subtext">
+          Works with UNV, Hikvision, Dahua, or any standard ONVIF / RTSP camera. Runs 100% locally on your computer with complete data privacy.
+        </p>
+        <div class="features-row">
+          <div class="feature-card">
+            <div class="feature-card-icon">📹</div>
+            <div class="feature-card-title">Use Any CCTV Camera</div>
+            <div class="feature-card-desc">No expensive proprietary hardware needed.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🔒</div>
+            <div class="feature-card-title">100% Offline & Private</div>
+            <div class="feature-card-desc">All biometric data stays safely inside your premises.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">💰</div>
+            <div class="feature-card-title">Zero Cloud Subscriptions</div>
+            <div class="feature-card-desc">One-time installation. No recurring monthly cloud charges.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 6: 0:52 - 1:00 (Call to Action) -->
+      <div class="slide" id="slide-5">
+        <div class="scene-tag">Scene 6 • 0:52 - 1:00</div>
+        <h1 class="headline-main">
+          Upgrade to <span class="highlight-cyan">Smart Attendance</span> Today!
+        </h1>
+        <p class="scene-subtext" style="font-size: 1.35rem; margin-bottom: 2rem;">
+          Faster mornings. Zero queues. Accurate timesheets. Total security peace of mind.
+        </p>
+        <div style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(236, 72, 153, 0.2)); border: 1px solid rgba(255, 255, 255, 0.2); padding: 1.25rem 2.5rem; border-radius: 20px; display: inline-flex; flex-direction: column; gap: 0.4rem; align-items: center;">
+          <div style="font-family: 'Outfit', sans-serif; font-size: 1.5rem; font-weight: 800; color: #fff;">
+            SaNDS Lab Middle East W.L.L.
+          </div>
+          <div style="font-size: 0.95rem; color: #cbd5e1;">
+            CCTV AI Multi-Gate Face Attendance & Security System
+          </div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #60a5fa; margin-top: 4px;">
+            Book a Free Live Demo: www.sandslab.me
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Prominent Bottom Captions Banner -->
+    <div class="caption-banner">
+      <div class="caption-text" id="captionText">
+        Still waiting in line for fingerprint and card machines?
+      </div>
+      <div class="voiceover-text" id="voiceoverText">
+        🎙️ Voiceover: "Still waiting in long lines every morning just to punch attendance?"
+      </div>
+    </div>
+
+    <!-- Timeline Progress Bar -->
+    <div class="timeline-container" onclick="seekVideo(event)">
+      <div class="timeline-bar" id="timelineBar"></div>
+    </div>
+  </div>
+
+  <!-- Scene Navigator Chips -->
+  <div class="scene-navigator">
+    <div class="scene-chip active" onclick="jumpToScene(0)">
+      <div class="time">0:00 - 0:10</div>
+      <div class="title">1. The Problem</div>
+    </div>
+    <div class="scene-chip" onclick="jumpToScene(1)">
+      <div class="time">0:10 - 0:20</div>
+      <div class="title">2. Just Walk In</div>
+    </div>
+    <div class="scene-chip" onclick="jumpToScene(2)">
+      <div class="time">0:20 - 0:32</div>
+      <div class="title">3. Multi-Gate Timesheet</div>
+    </div>
+    <div class="scene-chip" onclick="jumpToScene(3)">
+      <div class="time">0:32 - 0:45</div>
+      <div class="title">4. Security & Visitors</div>
+    </div>
+    <div class="scene-chip" onclick="jumpToScene(4)">
+      <div class="time">0:45 - 0:52</div>
+      <div class="title">5. Any CCTV & Offline</div>
+    </div>
+    <div class="scene-chip" onclick="jumpToScene(5)">
+      <div class="time">0:52 - 1:00</div>
+      <div class="title">6. Call to Action</div>
+    </div>
+  </div>
+
+  <!-- Full Storyboard & Production Script for Video Creators -->
+  <div class="script-section">
+    <div class="script-title">
+      📋 60-Second Video Script & Storyboard (Production Ready)
+    </div>
+    <p class="script-desc">
+      Use this exact script for creating your promotional video, Instagram Reel, YouTube Short, or LinkedIn video. Word count: 135 words (paced at ~2.2 words per second for crisp, natural English delivery).
+    </p>
+
+    <table class="script-table">
+      <thead>
+        <tr>
+          <th style="width: 110px;">Timing</th>
+          <th style="width: 250px;">Visual Action on Screen</th>
+          <th>Spoken Voiceover (Narrator)</th>
+          <th style="width: 230px;">Bold On-Screen Caption</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="time-badge">0:00 - 0:10</span></td>
+          <td>Workers queueing at old fingerprint punch machine. Someone forgets their card. Frustration.</td>
+          <td>"Still waiting in long lines every morning just to punch attendance? Card lost? Fingerprint rejected?"</td>
+          <td><strong>NO MORE QUEUES & PUNCH CARDS!</strong></td>
+        </tr>
+        <tr>
+          <td><span class="time-badge">0:10 - 0:20</span></td>
+          <td>Worker walks smoothly through the office glass door. Standard CCTV camera detects face with green box and plays a soft chime.</td>
+          <td>"Meet SaNDS Lab CCTV AI Face Attendance. Employees simply walk through the door — and attendance is marked in half a second!"</td>
+          <td><strong>JUST WALK IN • 0.5s FACE RECOGNITION</strong></td>
+        </tr>
+        <tr>
+          <td><span class="time-badge">0:20 - 0:32</span></td>
+          <td>Split screen showing Entry (IN) and Exit (OUT) cameras. Live dashboard compiles work hours, overtime, and lunch breaks.</td>
+          <td>"Multi-gate cameras track Entry and Exit automatically. You get accurate work hours, overtime, and break analytics instantly synced to payroll."</td>
+          <td><strong>AUTO IN & OUT • ACCURATE TIMESHEETS</strong></td>
+        </tr>
+        <tr>
+          <td><span class="time-badge">0:32 - 0:45</span></td>
+          <td>Red alert flashes when an unauthorized person approaches. Visitor arrives and gets logged automatically with high-res photo.</td>
+          <td>"Plus built-in security! Instant alerts if a blacklisted intruder enters, automatic visitor photo logs, and smart anti-spoofing protection."</td>
+          <td><strong>INTRUDER ALERTS & VISITOR TRACKING</strong></td>
+        </tr>
+        <tr>
+          <td><span class="time-badge">0:45 - 0:52</span></td>
+          <td>Icons showing UNV, Hikvision, Dahua CCTV cameras. Lock icon showing 100% on-premise offline server.</td>
+          <td>"It connects to your existing CCTV cameras! Runs 100% offline with complete privacy and zero monthly cloud subscription fees."</td>
+          <td><strong>USES YOUR EXISTING CCTV • ZERO MONTHLY FEES</strong></td>
+        </tr>
+        <tr>
+          <td><span class="time-badge">0:52 - 1:00</span></td>
+          <td>Modern SaNDS Lab Middle East branding, contact email, website link, and clear call-to-action button.</td>
+          <td>"Upgrade your business to contactless smart attendance today. Contact SaNDS Lab for a free live demonstration!"</td>
+          <td><strong>BOOK A FREE DEMO • SANDS LAB</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // 60-Second Video Timeline Configuration
+    const scenes = [
+      {
+        start: 0,
+        end: 10,
+        slideIndex: 0,
+        caption: "Still waiting in line for fingerprint and card machines?",
+        voiceover: "Still waiting in long lines every morning just to punch attendance? Card lost? Fingerprint rejected?"
+      },
+      {
+        start: 10,
+        end: 20,
+        slideIndex: 1,
+        caption: "Just walk naturally through the door — attendance marked in 0.5s!",
+        voiceover: "Meet SaNDS Lab CCTV AI Face Attendance. Employees simply walk through the door — and attendance is marked in half a second!"
+      },
+      {
+        start: 20,
+        end: 32,
+        slideIndex: 2,
+        caption: "Automatic IN & OUT Multi-Gate Tracking + Live Timesheets",
+        voiceover: "Multi-gate cameras track Entry and Exit automatically. You get accurate work hours, overtime, and break analytics instantly synced to payroll."
+      },
+      {
+        start: 32,
+        end: 45,
+        slideIndex: 3,
+        caption: "Real-Time Blacklist Intruder Alerts & Automatic Visitor Photos",
+        voiceover: "Plus built-in security! Instant alerts if a blacklisted intruder enters, automatic visitor photo logs, and smart anti-spoofing protection."
+      },
+      {
+        start: 45,
+        end: 52,
+        slideIndex: 4,
+        caption: "Works with Your Existing CCTV Cameras • 100% Offline • Zero Monthly Fees",
+        voiceover: "It connects to your existing CCTV cameras! Runs 100% offline with complete privacy and zero monthly cloud subscription fees."
+      },
+      {
+        start: 52,
+        end: 60,
+        slideIndex: 5,
+        caption: "Upgrade Your Workplace Today • SaNDS Lab Middle East W.L.L.",
+        voiceover: "Upgrade your business to contactless smart attendance today. Contact SaNDS Lab for a free live demonstration!"
+      }
+    ];
+
+    let currentTime = 0;
+    const totalDuration = 60;
+    let isPlaying = false;
+    let timer = null;
+    let voiceEnabled = true;
+    let currentSceneIndex = -1;
+
+    function updateDisplay() {
+      // Update Progress Bar
+      const pct = (currentTime / totalDuration) * 100;
+      document.getElementById('timelineBar').style.width = pct + '%';
+
+      // Update Timer Watermark
+      const mins = Math.floor(currentTime / 60);
+      const secs = Math.floor(currentTime % 60);
+      const timeStr = `${mins}:${secs < 10 ? '0' : ''}${secs} / 1:00`;
+      const liveElem = document.querySelector('.watermark-live');
+      if (liveElem) {
+        liveElem.innerHTML = `<span class="pulse-dot"></span> ${timeStr}`;
+      }
+
+      // Find active scene
+      const sceneIndex = scenes.findIndex(s => currentTime >= s.start && currentTime < s.end);
+      const activeIdx = sceneIndex !== -1 ? sceneIndex : (currentTime >= 60 ? scenes.length - 1 : 0);
+
+      if (activeIdx !== currentSceneIndex) {
+        currentSceneIndex = activeIdx;
+        const curScene = scenes[currentSceneIndex];
+
+        // Switch slides
+        document.querySelectorAll('.slide').forEach((sl, idx) => {
+          sl.classList.toggle('active', idx === curScene.slideIndex);
+        });
+
+        // Switch scene chips
+        document.querySelectorAll('.scene-chip').forEach((ch, idx) => {
+          ch.classList.toggle('active', idx === currentSceneIndex);
+        });
+
+        // Update Captions
+        document.getElementById('captionText').textContent = curScene.caption;
+        document.getElementById('voiceoverText').innerHTML = `🎙️ Voiceover: "${curScene.voiceover}"`;
+
+        // Text-to-Speech voiceover trigger if supported & enabled
+        if (isPlaying && voiceEnabled && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(curScene.voiceover);
+          utterance.rate = 1.05;
+          utterance.pitch = 1.0;
+          const voices = window.speechSynthesis.getVoices();
+          const engVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('David') || v.name.includes('Zira')));
+          if (engVoice) utterance.voice = engVoice;
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        pauseVideo();
+      } else {
+        playVideo();
+      }
+    }
+
+    function playVideo() {
+      if (currentTime >= totalDuration) currentTime = 0;
+      isPlaying = true;
+      document.getElementById('playPauseBtn').innerHTML = '⏸ Pause';
+      document.getElementById('playPauseBtn').classList.replace('btn-primary', 'btn-secondary');
+
+      timer = setInterval(() => {
+        currentTime += 0.25;
+        if (currentTime >= totalDuration) {
+          currentTime = totalDuration;
+          pauseVideo();
+        }
+        updateDisplay();
+      }, 250);
+
+      updateDisplay();
+    }
+
+    function pauseVideo() {
+      isPlaying = false;
+      clearInterval(timer);
+      document.getElementById('playPauseBtn').innerHTML = '▶ Play Video (60s)';
+      document.getElementById('playPauseBtn').classList.replace('btn-secondary', 'btn-primary');
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    function resetVideo() {
+      pauseVideo();
+      currentTime = 0;
+      currentSceneIndex = -1;
+      updateDisplay();
+    }
+
+    function jumpToScene(idx) {
+      pauseVideo();
+      currentTime = scenes[idx].start;
+      currentSceneIndex = -1;
+      updateDisplay();
+    }
+
+    function seekVideo(e) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+      currentTime = ratio * totalDuration;
+      currentSceneIndex = -1;
+      updateDisplay();
+    }
+
+    function toggleVoiceoverSound() {
+      voiceEnabled = !voiceEnabled;
+      document.getElementById('voiceToggleLabel').textContent = voiceEnabled ? 'Voice Narration: ON' : 'Voice Narration: MUTED';
+      if (!voiceEnabled && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    function toggleFullscreen() {
+      const elem = document.getElementById('videoViewport');
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => alert(err.message));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // Initialize display on load
+    window.addEventListener('load', () => {
+      updateDisplay();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = () => {};
+      }
+    });
+  </script>
+</body>
+</html>

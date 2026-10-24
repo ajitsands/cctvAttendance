@@ -76,9 +76,25 @@ try {
     $colsG4 = $db->query("SHOW COLUMNS FROM `guests` LIKE 'archived_at'")->fetchAll();
     if (empty($colsG4)) {
         $db->exec("ALTER TABLE `guests` ADD COLUMN `archived_at` DATETIME NULL AFTER `is_archived`");
-        echo "✓ Column 'archived_at' added to 'guests'.\n";
     } else {
         echo "✓ Column 'archived_at' already exists in 'guests'.\n";
+    }
+
+    // Add is_archived and archived_at to tamper_logs
+    $colsT1 = $db->query("SHOW COLUMNS FROM `tamper_logs` LIKE 'is_archived'")->fetchAll();
+    if (empty($colsT1)) {
+        $db->exec("ALTER TABLE `tamper_logs` ADD COLUMN `is_archived` TINYINT(1) DEFAULT 0 AFTER `is_reviewed`, ADD INDEX `idx_tamper_archived` (`is_archived`)");
+        echo "✓ Column 'is_archived' added to 'tamper_logs'.\n";
+    } else {
+        echo "✓ Column 'is_archived' already exists in 'tamper_logs'.\n";
+    }
+
+    $colsT2 = $db->query("SHOW COLUMNS FROM `tamper_logs` LIKE 'archived_at'")->fetchAll();
+    if (empty($colsT2)) {
+        $db->exec("ALTER TABLE `tamper_logs` ADD COLUMN `archived_at` DATETIME NULL AFTER `is_archived`");
+        echo "✓ Column 'archived_at' added to 'tamper_logs'.\n";
+    } else {
+        echo "✓ Column 'archived_at' already exists in 'tamper_logs'.\n";
     }
 
 } catch (Exception $e) {
